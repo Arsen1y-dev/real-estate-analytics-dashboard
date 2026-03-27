@@ -54,6 +54,18 @@ npm run preview
 | `cache.ts` | Сохранение и восстановление датасета из `localStorage` |
 | `types.ts` | Типы данных и фильтров |
 
+## Публикация на GitHub
+
+1. Создайте **пустой** репозиторий на GitHub (без README и без `.gitignore`), например `real-estate-analytics-dashboard`.
+2. В каталоге проекта:
+
+```bash
+git remote add origin https://github.com/<ваш-логин>/real-estate-analytics-dashboard.git
+git push -u origin main
+```
+
+При SSH замените URL на `git@github.com:<ваш-логин>/real-estate-analytics-dashboard.git`.
+
 ## Лицензия
 
 MIT — см. [LICENSE](LICENSE).
