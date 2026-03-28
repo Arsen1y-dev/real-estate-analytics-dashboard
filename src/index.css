@@ -26,19 +26,19 @@ html:not([data-theme]) ::-webkit-scrollbar {
 
 html[data-theme='dark'] ::-webkit-scrollbar-track,
 html:not([data-theme]) ::-webkit-scrollbar-track {
-    background: rgb(15 23 42);
+    background: rgb(9 9 11);
 }
 
 html[data-theme='dark'] ::-webkit-scrollbar-thumb,
 html:not([data-theme]) ::-webkit-scrollbar-thumb {
-    background: rgb(71 85 105);
+    background: rgb(63 63 70);
     border-radius: 6px;
-    border: 2px solid rgb(15 23 42);
+    border: 2px solid rgb(9 9 11);
 }
 
 html[data-theme='dark'] ::-webkit-scrollbar-thumb:hover,
 html:not([data-theme]) ::-webkit-scrollbar-thumb:hover {
-    background: rgb(100 116 139);
+    background: rgb(82 82 91);
 }
 
 html[data-theme='light'] ::-webkit-scrollbar {
@@ -47,15 +47,88 @@ html[data-theme='light'] ::-webkit-scrollbar {
 }
 
 html[data-theme='light'] ::-webkit-scrollbar-track {
-    background: rgb(241 245 249);
+    background: rgb(250 250 250);
 }
 
 html[data-theme='light'] ::-webkit-scrollbar-thumb {
-    background: rgb(148 163 184);
+    background: rgb(212 212 216);
     border-radius: 6px;
-    border: 2px solid rgb(241 245 249);
+    border: 2px solid rgb(250 250 250);
 }
 
 html[data-theme='light'] ::-webkit-scrollbar-thumb:hover {
-    background: rgb(100 116 139);
+    background: rgb(161 161 170);
+}
+
+/* Двойной range-слайдер (фильтры): трек прозрачный, события — только у ползунков */
+.filter-dual-range input[type='range'] {
+    -webkit-appearance: none;
+    appearance: none;
+    pointer-events: none;
+    height: 24px;
+    margin: 0;
+    width: 100%;
+    background: none;
+}
+
+.filter-dual-range input[type='range']::-webkit-slider-runnable-track {
+    height: 6px;
+    background: transparent;
+}
+
+.filter-dual-range input[type='range']::-moz-range-track {
+    height: 6px;
+    background: transparent;
+}
+
+.filter-dual-range input[type='range']::-webkit-slider-thumb {
+    pointer-events: auto;
+    -webkit-appearance: none;
+    box-sizing: border-box;
+    width: 18px;
+    height: 18px;
+    margin-top: -6px;
+    border-radius: 9999px;
+    border: 2px solid rgba(255, 255, 255, 0.35);
+    cursor: grab;
+    box-shadow:
+        0 1px 3px rgba(0, 0, 0, 0.35),
+        0 0 0 1px rgba(0, 0, 0, 0.12);
+}
+
+.filter-dual-range input[type='range']::-webkit-slider-thumb:active {
+    cursor: grabbing;
+}
+
+.filter-dual-range input[type='range']::-moz-range-thumb {
+    pointer-events: auto;
+    box-sizing: border-box;
+    width: 18px;
+    height: 18px;
+    border-radius: 9999px;
+    border: 2px solid rgba(255, 255, 255, 0.35);
+    cursor: grab;
+    box-shadow:
+        0 1px 3px rgba(0, 0, 0, 0.35),
+        0 0 0 1px rgba(0, 0, 0, 0.12);
+}
+
+html[data-theme='dark'] .filter-dual-range input[type='range']::-webkit-slider-thumb {
+    background: rgb(129 140 248);
+    border-color: rgb(199 210 254 / 0.45);
+}
+
+html[data-theme='dark'] .filter-dual-range input[type='range']::-moz-range-thumb {
+    background: rgb(129 140 248);
+    border-color: rgb(199 210 254 / 0.45);
+}
+
+html[data-theme='light'] .filter-dual-range input[type='range']::-webkit-slider-thumb {
+    background: rgb(79 70 229);
+    border-color: rgb(255 255 255);
+}
+
+html[data-theme='light'] .filter-dual-range input[type='range']::-moz-range-thumb {
+    background: rgb(79 70 229);
+    border-color: rgb(255 255 255);
 }

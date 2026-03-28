@@ -1,205 +1,325 @@
-import React, { useMemo } from 'react';
+import React, { useId, useMemo } from 'react';
 import type { DataSummary, FilterSettings } from '@/types';
-import { isAreaFilterDirty, isPriceFilterDirty, isRoomFilterActive } from '@/domain/filters';
+import { isAnyFilterDirty } from '@/domain/filters';
 import { themeClass, type Theme } from '@/theme';
 import { CloseIcon } from '@/components/icons';
+import { FilterDualRange, filterSliderStep } from '@/components/FilterDualRange';
+import { formatAreaCompactSqM, formatRubCompact } from '@/utils/metricDisplay';
+
+function formatIntRu(n: number): string {
+    return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(n);
+}
 
 export const FilterPanel: React.FC<{
     filters: FilterSettings;
     baselineFilters: FilterSettings;
     summary: DataSummary;
     onFilterChange: (newFilters: FilterSettings) => void;
+    /** Совпадений текущих фильтров по полному набору строк. */
+    matchCount: number;
+    totalCount: number;
     onClose?: () => void;
     theme: Theme;
-}> = ({ filters, baselineFilters, summary, onFilterChange, onClose, theme }) => {
+}> = ({ filters, baselineFilters, summary, onFilterChange, matchCount, totalCount, onClose, theme }) => {
     const priceCol = summary.coreColumnMap.price;
     const areaCol = summary.coreColumnMap.area;
     const roomsCol = summary.coreColumnMap.rooms;
+    const baseId = useId();
 
-    const handlePriceChange = (field: 'min' | 'max', value: number) => {
-        const newPrice = { ...filters.price, [field]: value };
-        if (newPrice.min > newPrice.max) {
-            if (field === 'min') newPrice.max = newPrice.min;
-            else newPrice.min = newPrice.max;
-        }
-        onFilterChange({ ...filters, price: newPrice });
+    const priceId = `${baseId}-price`;
+    const areaId = `${baseId}-area`;
+    const roomsId = `${baseId}-rooms`;
+
+    const priceBounds = baselineFilters.price;
+    const areaBounds = baselineFilters.area;
+    const priceSpan = priceBounds.max - priceBounds.min;
+    const areaSpan = areaBounds.max - areaBounds.min;
+    const priceStep = useMemo(() => filterSliderStep(priceSpan, 'price'), [priceSpan]);
+    const areaStep = useMemo(() => filterSliderStep(areaSpan, 'area'), [areaSpan]);
+
+    const handlePriceRange = (next: { min: number; max: number }) => {
+        onFilterChange({ ...filters, price: { ...next } });
     };
 
-    const handleAreaChange = (field: 'min' | 'max', value: number) => {
-        const newArea = { ...filters.area, [field]: value };
-        if (newArea.min > newArea.max) {
-            if (field === 'min') newArea.max = newArea.min;
-            else newArea.min = newArea.max;
-        }
-        onFilterChange({ ...filters, area: newArea });
+    const handleAreaRange = (next: { min: number; max: number }) => {
+        onFilterChange({ ...filters, area: { ...next } });
     };
 
     const handleRoomToggle = (room: number) => {
-        const newRooms = filters.rooms.includes(room)
+        if (filters.rooms.length === 0) {
+            onFilterChange({ ...filters, rooms: [room] });
+            return;
+        }
+        const next = filters.rooms.includes(room)
             ? filters.rooms.filter(r => r !== room)
-            : [...filters.rooms, room];
-        onFilterChange({ ...filters, rooms: newRooms });
+            : [...filters.rooms, room].sort((a, b) => a - b);
+        onFilterChange({ ...filters, rooms: next });
     };
 
-    const resetPriceFilter = () => {
-        onFilterChange({ ...filters, price: { ...baselineFilters.price } });
+    const clearRooms = () => onFilterChange({ ...filters, rooms: [] });
+
+    const resetAllFilters = () => {
+        onFilterChange({
+            price: { ...baselineFilters.price },
+            area: { ...baselineFilters.area },
+            rooms: [...baselineFilters.rooms],
+        });
     };
 
-    const resetAreaFilter = () => {
-        onFilterChange({ ...filters, area: { ...baselineFilters.area } });
-    };
-
-    const showPriceReset = useMemo(() => isPriceFilterDirty(filters, baselineFilters), [filters, baselineFilters]);
-    const showAreaReset = useMemo(() => isAreaFilterDirty(filters, baselineFilters), [filters, baselineFilters]);
+    const filtersDirty = useMemo(() => isAnyFilterDirty(filters, baselineFilters), [filters, baselineFilters]);
 
     const hasAnyCore = priceCol || areaCol || roomsCol;
 
+    const sectionTitle = themeClass(theme, {
+        dark: 'text-[11px] font-medium uppercase tracking-[0.12em] text-zinc-500',
+        light: 'text-[11px] font-medium uppercase tracking-[0.12em] text-zinc-500',
+    });
+
+    const shell = themeClass(theme, {
+        dark: 'flex h-full max-h-[min(100vh-10rem,56rem)] flex-col overflow-y-auto rounded-3xl border border-zinc-800/85 bg-zinc-950/75 shadow-[0_1px_3px_rgba(0,0,0,0.2),0_16px_40px_-12px_rgba(0,0,0,0.35)] backdrop-blur-md lg:max-h-[calc(100vh-8rem)]',
+        light: 'flex h-full max-h-[min(100vh-10rem,56rem)] flex-col overflow-y-auto rounded-3xl border border-zinc-200/95 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04),0_16px_48px_-16px_rgba(0,0,0,0.07)] backdrop-blur-md lg:max-h-[calc(100vh-8rem)]',
+    });
+
+    const innerPad = 'px-5 pb-6 pt-6 sm:px-6 sm:pb-7 sm:pt-7';
+
+    const chipBase =
+        'inline-flex min-h-[2rem] items-center justify-center rounded-lg px-3 text-sm font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/35 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent';
+
+    const roomChipMuted = themeClass(theme, {
+        dark: 'border border-zinc-700/90 bg-zinc-900/50 text-zinc-400 hover:border-zinc-600 hover:bg-zinc-800/60 hover:text-zinc-300',
+        light: 'border border-zinc-200 bg-zinc-50 text-zinc-600 hover:border-zinc-300 hover:bg-zinc-100',
+    });
+
+    const roomChipOn = themeClass(theme, {
+        dark: 'border border-indigo-500/45 bg-indigo-500/[0.12] text-indigo-100 shadow-sm',
+        light: 'border border-indigo-200 bg-indigo-50 text-indigo-900 shadow-sm',
+    });
+
+    const roomChipOff = themeClass(theme, {
+        dark: 'border border-zinc-700/80 bg-transparent text-zinc-500 opacity-75 hover:opacity-100',
+        light: 'border border-zinc-200 bg-white text-zinc-400 opacity-85 hover:opacity-100',
+    });
+
     return (
-        <div className={themeClass(theme, {
-            dark: 'flex h-full max-h-[min(100vh-10rem,56rem)] flex-col gap-6 overflow-y-auto rounded-2xl border border-slate-700/50 bg-slate-900/75 p-5 shadow-lg backdrop-blur sm:p-6 lg:max-h-[calc(100vh-8rem)]',
-            light: 'flex h-full max-h-[min(100vh-10rem,56rem)] flex-col gap-6 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-lg sm:p-6 lg:max-h-[calc(100vh-8rem)]',
-        })}>
-            <div className={themeClass(theme, {
-                dark: 'flex items-start justify-between border-b border-slate-700/70 pb-3',
-                light: 'flex items-start justify-between border-b border-slate-200 pb-3',
-            })}>
-                <div className="space-y-1">
-                    <h3 className={`font-display ${themeClass(theme, {
-                        dark: 'text-lg sm:text-xl font-semibold text-white tracking-tight',
-                        light: 'text-lg sm:text-xl font-semibold text-slate-900 tracking-tight',
-                    })}`}>Фильтры</h3>
-                    <p className={themeClass(theme, {
-                        dark: 'text-sm text-slate-400',
-                        light: 'text-sm text-slate-500',
-                    })}>Уточните параметры выборки</p>
+        <div className={shell}>
+            <div className={`shrink-0 border-b ${themeClass(theme, { dark: 'border-zinc-800/90', light: 'border-zinc-200/90' })} ${innerPad}`}>
+                <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 space-y-1">
+                        <h3
+                            className={themeClass(theme, {
+                            dark: 'font-display text-base font-semibold tracking-tight text-zinc-50',
+                            light: 'font-display text-base font-semibold tracking-tight text-zinc-900',
+                            })}
+                        >
+                            Фильтры
+                        </h3>
+                        <p
+                            className={themeClass(theme, {
+                                dark: 'text-sm text-zinc-500',
+                                light: 'text-sm text-zinc-500',
+                            })}
+                        >
+                            Уточните выборку — графики и KPI обновятся автоматически
+                        </p>
+                    </div>
+                    {onClose && (
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            className={themeClass(theme, {
+                                dark: 'shrink-0 rounded-lg p-1.5 text-zinc-500 transition hover:bg-zinc-800 hover:text-zinc-100 lg:hidden',
+                                light: 'shrink-0 rounded-lg p-1.5 text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 lg:hidden',
+                            })}
+                            aria-label="Закрыть панель фильтров"
+                        >
+                            <CloseIcon />
+                        </button>
+                    )}
                 </div>
-                {onClose && (
-                    <button type="button" onClick={onClose} className={themeClass(theme, {
-                        dark: 'mt-1 text-slate-400 hover:text-white lg:hidden',
-                        light: 'mt-1 text-slate-500 hover:text-slate-900 lg:hidden',
-                    })}>
-                        <CloseIcon />
+
+                <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div
+                        className={themeClass(theme, {
+                            dark: 'inline-flex w-fit items-baseline gap-2 rounded-xl bg-zinc-900/85 px-3.5 py-2.5 ring-1 ring-zinc-800/90',
+                            light: 'inline-flex w-fit items-baseline gap-2 rounded-xl bg-zinc-50 px-3.5 py-2.5 ring-1 ring-zinc-200/90',
+                        })}
+                        role="status"
+                        aria-live="polite"
+                    >
+                        <span
+                            className={themeClass(theme, {
+                                dark: 'text-lg font-semibold tabular-nums text-zinc-50',
+                                light: 'text-lg font-semibold tabular-nums text-zinc-900',
+                            })}
+                        >
+                            {formatIntRu(matchCount)}
+                        </span>
+                        <span
+                            className={themeClass(theme, {
+                                dark: 'text-sm text-zinc-500',
+                                light: 'text-sm text-zinc-500',
+                            })}
+                        >
+                            из {formatIntRu(totalCount)} объектов
+                        </span>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={resetAllFilters}
+                        disabled={!filtersDirty}
+                        className={`shrink-0 rounded-lg px-3 py-2 text-sm font-medium transition ${
+                            filtersDirty
+                                ? themeClass(theme, {
+                                      dark: 'border border-zinc-700 bg-zinc-900/90 text-zinc-200 hover:border-zinc-600 hover:bg-zinc-900',
+                                      light: 'border border-zinc-200 bg-white text-zinc-800 shadow-sm hover:border-zinc-300 hover:bg-zinc-50',
+                                  })
+                                : themeClass(theme, {
+                                      dark: 'cursor-not-allowed border border-zinc-800/90 bg-zinc-950/50 text-zinc-600',
+                                      light: 'cursor-not-allowed border border-zinc-200/90 bg-zinc-50 text-zinc-400',
+                                  })
+                        }`}
+                    >
+                        Сбросить фильтры
                     </button>
-                )}
+                </div>
             </div>
 
-            {!hasAnyCore && (
-                <p className={themeClass(theme, {
-                    dark: 'text-sm text-slate-400',
-                    light: 'text-sm text-slate-600',
-                })}>
-                    В файле нет колонок «Цена», «Общая площадь» и «Количество комнат» — боковые фильтры по ним скрыты. Графики строятся по всем строкам после загрузки.
-                </p>
-            )}
+            <div className={`flex-1 space-y-6 ${innerPad} pt-5`}>
+                {!hasAnyCore && (
+                    <p
+                        className={themeClass(theme, {
+                            dark: 'rounded-2xl border border-dashed border-zinc-800 bg-zinc-900/25 p-5 text-sm leading-relaxed text-zinc-500',
+                            light: 'rounded-2xl border border-dashed border-zinc-200 bg-zinc-50/80 p-5 text-sm leading-relaxed text-zinc-600',
+                        })}
+                    >
+                        В файле нет колонок «цена», «площадь» и «комнаты» — фильтры скрыты. Данные идут в графики без отсечения.
+                    </p>
+                )}
 
-            <div className="flex-1 space-y-5">
                 {priceCol && (
-                    <div className="space-y-2">
-                        <div className="flex items-center justify-between gap-2">
-                            <label className={themeClass(theme, {
-                                dark: 'block text-sm font-medium text-cyan-300',
-                                light: 'block text-sm font-medium text-cyan-700',
-                            })}>{priceCol} (руб.)</label>
-                            {showPriceReset && (
-                                <button
-                                    type="button"
-                                    onClick={resetPriceFilter}
+                    <section className="space-y-3" aria-labelledby={priceId}>
+                        <div className="flex flex-wrap items-end justify-between gap-2">
+                            <div>
+                                <p id={priceId} className={sectionTitle}>
+                                    Цена
+                                </p>
+                                <p
                                     className={themeClass(theme, {
-                                        dark: 'shrink-0 rounded-full border border-cyan-500/40 bg-cyan-500/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-widest text-cyan-200 hover:border-cyan-400/70 hover:bg-cyan-500/20',
-                                        light: 'shrink-0 rounded-full border border-cyan-500/40 bg-cyan-500/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-widest text-cyan-700 hover:bg-cyan-300/30',
+                                        dark: 'mt-1 text-[13px] text-zinc-500',
+                                        light: 'mt-1 text-[13px] text-zinc-600',
                                     })}
                                 >
-                                    Сбросить
-                                </button>
-                            )}
-                        </div>
-                        <div className="flex items-center gap-2 text-sm">
-                            <input type="number" value={filters.price.min} onChange={e => handlePriceChange('min', +e.target.value)}
+                                    {priceCol}
+                                </p>
+                            </div>
+                            <p
                                 className={themeClass(theme, {
-                                    dark: 'w-full bg-slate-900/70 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:ring-2 focus:ring-cyan-500/70 focus:border-cyan-400/60 transition',
-                                    light: 'w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500/70 transition',
-                                })} />
-                            <span className={themeClass(theme, {
-                                dark: 'text-slate-500',
-                                light: 'text-slate-400',
-                            })}>—</span>
-                            <input type="number" value={filters.price.max} onChange={e => handlePriceChange('max', +e.target.value)}
-                                className={themeClass(theme, {
-                                    dark: 'w-full bg-slate-900/70 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:ring-2 focus:ring-cyan-500/70 focus:border-cyan-400/60 transition',
-                                    light: 'w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500/70 transition',
-                                })} />
+                                    dark: 'max-w-[min(100%,14rem)] text-right text-xs tabular-nums leading-snug text-zinc-500',
+                                    light: 'max-w-[min(100%,14rem)] text-right text-xs tabular-nums leading-snug text-zinc-500',
+                                })}
+                            >
+                                {formatRubCompact(filters.price.min)} — {formatRubCompact(filters.price.max)}
+                            </p>
                         </div>
-                    </div>
+                        <FilterDualRange
+                            theme={theme}
+                            boundMin={priceBounds.min}
+                            boundMax={priceBounds.max}
+                            valueMin={filters.price.min}
+                            valueMax={filters.price.max}
+                            step={priceStep}
+                            onChange={handlePriceRange}
+                            ariaLabelledBy={priceId}
+                        />
+                    </section>
                 )}
 
                 {areaCol && (
-                    <div className="space-y-2">
-                        <div className="flex items-center justify-between gap-2">
-                            <label className={themeClass(theme, {
-                                dark: 'block text-sm font-medium text-cyan-300',
-                                light: 'block text-sm font-medium text-cyan-700',
-                            })}>{areaCol} (м²)</label>
-                            {showAreaReset && (
-                                <button
-                                    type="button"
-                                    onClick={resetAreaFilter}
+                    <section className="space-y-3" aria-labelledby={areaId}>
+                        <div className="flex flex-wrap items-end justify-between gap-2">
+                            <div>
+                                <p id={areaId} className={sectionTitle}>
+                                    Площадь
+                                </p>
+                                <p
                                     className={themeClass(theme, {
-                                        dark: 'shrink-0 rounded-full border border-cyan-500/40 bg-cyan-500/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-widest text-cyan-200 hover:border-cyan-400/70 hover:bg-cyan-500/20',
-                                        light: 'shrink-0 rounded-full border border-cyan-500/40 bg-cyan-500/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-widest text-cyan-700 hover:bg-cyan-300/30',
+                                        dark: 'mt-1 text-[13px] text-zinc-500',
+                                        light: 'mt-1 text-[13px] text-zinc-600',
                                     })}
                                 >
-                                    Сбросить
-                                </button>
-                            )}
-                        </div>
-                        <div className="flex items-center gap-2 text-sm">
-                            <input type="number" value={filters.area.min} onChange={e => handleAreaChange('min', +e.target.value)}
+                                    {areaCol}
+                                </p>
+                            </div>
+                            <p
                                 className={themeClass(theme, {
-                                    dark: 'w-full bg-slate-900/70 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:ring-2 focus:ring-cyan-500/70 focus:border-cyan-400/60 transition',
-                                    light: 'w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500/70 transition',
-                                })} />
-                            <span className={themeClass(theme, {
-                                dark: 'text-slate-500',
-                                light: 'text-slate-400',
-                            })}>—</span>
-                            <input type="number" value={filters.area.max} onChange={e => handleAreaChange('max', +e.target.value)}
-                                className={themeClass(theme, {
-                                    dark: 'w-full bg-slate-900/70 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:ring-2 focus:ring-cyan-500/70 focus:border-cyan-400/60 transition',
-                                    light: 'w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500/70 transition',
-                                })} />
+                                    dark: 'text-right text-xs tabular-nums text-zinc-500',
+                                    light: 'text-right text-xs tabular-nums text-zinc-500',
+                                })}
+                            >
+                                {formatAreaCompactSqM(filters.area.min)} — {formatAreaCompactSqM(filters.area.max)}
+                            </p>
                         </div>
-                    </div>
+                        <FilterDualRange
+                            theme={theme}
+                            boundMin={areaBounds.min}
+                            boundMax={areaBounds.max}
+                            valueMin={filters.area.min}
+                            valueMax={filters.area.max}
+                            step={areaStep}
+                            onChange={handleAreaRange}
+                            ariaLabelledBy={areaId}
+                        />
+                    </section>
                 )}
 
                 {roomsCol && summary.rooms.length > 0 && (
-                    <div className="space-y-3">
-                        <label className={themeClass(theme, {
-                            dark: 'block text-sm font-medium text-cyan-300',
-                            light: 'block text-sm font-medium text-cyan-700',
-                        })}>{roomsCol}</label>
-                        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-3">
-                            {summary.rooms.map(room => (
-                                <button key={room} type="button" onClick={() => handleRoomToggle(room)}
-                                    className={`${
-                                        isRoomFilterActive(filters.rooms, room)
-                                            ? themeClass(theme, {
-                                                dark: 'bg-cyan-500/80 text-white font-semibold shadow-cyan-800/40',
-                                                light: 'bg-cyan-500/90 text-white font-semibold shadow-cyan-200/80',
-                                            })
-                                            : themeClass(theme, {
-                                                dark: 'bg-slate-800/70 text-slate-300 hover:bg-slate-700/70',
-                                                light: 'bg-slate-100 text-slate-700 hover:bg-slate-200',
-                                            })
-                                    } px-3 py-2 text-sm rounded-xl transition-colors shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/70`}>
-                                    {room}
-                                </button>
-                            ))}
+                    <section className="space-y-3" aria-labelledby={roomsId}>
+                        <div>
+                            <p id={roomsId} className={sectionTitle}>
+                                Комнаты
+                            </p>
+                            <p
+                                className={themeClass(theme, {
+                                    dark: 'mt-1 text-[13px] text-zinc-500',
+                                    light: 'mt-1 text-[13px] text-zinc-600',
+                                })}
+                            >
+                                {roomsCol}
+                            </p>
                         </div>
-                        <p className={themeClass(theme, {
-                            dark: 'text-xs text-slate-400',
-                            light: 'text-xs text-slate-500',
-                        })}>Нажмите, чтобы включить или исключить значения.</p>
-                    </div>
+                        <div className="flex flex-wrap gap-2">
+                            <button
+                                type="button"
+                                onClick={clearRooms}
+                                className={`${chipBase} ${
+                                    filters.rooms.length === 0 ? `${roomChipOn} ring-1 ring-indigo-500/20` : roomChipMuted
+                                }`}
+                            >
+                                Все планировки
+                            </button>
+                            {[...summary.rooms].sort((a, b) => a - b).map(room => {
+                                const showOn =
+                                    filters.rooms.length === 0 ? false : filters.rooms.includes(room);
+                                const cls =
+                                    filters.rooms.length === 0
+                                        ? roomChipMuted
+                                        : showOn
+                                          ? roomChipOn
+                                          : roomChipOff;
+                                return (
+                                    <button
+                                        key={room}
+                                        type="button"
+                                        onClick={() => handleRoomToggle(room)}
+                                        className={`${chipBase} min-w-[2.75rem] ${cls}`}
+                                        aria-pressed={filters.rooms.length === 0 ? false : showOn}
+                                    >
+                                        {room === 0 ? 'Студия' : `${room}`}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </section>
                 )}
             </div>
         </div>

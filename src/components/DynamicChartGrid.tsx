@@ -1,27 +1,17 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import {
-    ResponsiveContainer,
-    BarChart,
-    Bar,
-    XAxis,
-    YAxis,
-    CartesianGrid,
-    Tooltip,
-    ScatterChart,
-    Scatter,
-    ZAxis,
-    Brush,
-} from 'recharts';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Brush } from 'recharts';
+import { ScatterChartView } from '@/components/charts/ScatterChartView';
 import type { DataRow, DataSummary, UserChartDefinition } from '@/types';
 import type { Theme } from '@/theme';
 import { themeClass, CHART_FILL, BAR_OPACITY_INACTIVE } from '@/theme';
 import { formatNumber } from '@/utils/format';
-import { median, quantile, axisDomainFromValues } from '@/utils/stats';
+import { median, quantile } from '@/utils/stats';
 import { sampleArray, MAX_SCATTER_POINTS } from '@/utils/sample';
 import { isFiniteNumber } from '@/domain/dataset';
 import { ChartCard } from '@/components/ChartCard';
 import { EmptyChartState } from '@/components/EmptyChartState';
 import { CloseIcon } from '@/components/icons';
+import { exportElementToPdf, exportElementToPng, slugifyFilenamePart } from '@/utils/chartExport';
 
 const CATEGORY_DISPLAY_LIMIT = 35;
 
@@ -129,6 +119,8 @@ export const DynamicChartGrid: React.FC<{
     theme: Theme;
 }> = ({ data, charts, summary, theme }) => {
     const [expanded, setExpanded] = useState<UserChartDefinition | null>(null);
+    const expandedExportRef = useRef<HTMLDivElement>(null);
+    const [expandedExportBusy, setExpandedExportBusy] = useState(false);
     /** Клик по столбцу гистограммы — приближение к интервалу этого бина. */
     const [histZoomById, setHistZoomById] = useState<Record<string, { min: number; max: number }>>({});
 
@@ -141,14 +133,32 @@ export const DynamicChartGrid: React.FC<{
         return () => window.removeEventListener('keydown', onKey);
     }, [expanded]);
 
+    const exportExpanded = useCallback(
+        async (kind: 'png' | 'pdf') => {
+            const el = expandedExportRef.current;
+            if (!el || expandedExportBusy) return;
+            const base = slugifyFilenamePart(expanded?.title ?? 'chart');
+            setExpandedExportBusy(true);
+            try {
+                if (kind === 'png') await exportElementToPng(el, base, theme);
+                else await exportElementToPdf(el, base, theme);
+            } catch (e) {
+                console.warn('[chart export]', e);
+            } finally {
+                setExpandedExportBusy(false);
+            }
+        },
+        [expanded?.title, expandedExportBusy, theme]
+    );
+
     const chartFillColor = CHART_FILL[theme];
-    const axisTextColor = theme === 'dark' ? '#9ca3af' : '#475569';
-    const gridColor = theme === 'dark' ? '#374151' : '#e2e8f0';
+    const axisTextColor = theme === 'dark' ? '#a1a1aa' : '#52525b';
+    const gridColor = theme === 'dark' ? '#27272a' : '#e4e4e7';
     const tooltipStyle = theme === 'dark'
-        ? { backgroundColor: '#1f2937', border: '1px solid #374151', color: '#e2e8f0' }
-        : { backgroundColor: '#ffffff', border: '1px solid #bfdbfe', color: '#1f2937' };
-    const tooltipCursor = theme === 'dark' ? { fill: '#374151', opacity: 0.15 } : { fill: '#e2e8f0', opacity: 0.6 };
-    const scatterGridColor = theme === 'dark' ? '#374151' : '#dbeafe';
+        ? { backgroundColor: '#18181b', border: '1px solid #3f3f46', color: '#e4e4e7' }
+        : { backgroundColor: '#ffffff', border: '1px solid #e4e4e7', color: '#18181b' };
+    const tooltipCursor = theme === 'dark' ? { fill: '#3f3f46', opacity: 0.12 } : { fill: '#f4f4f5', opacity: 0.85 };
+    const scatterGridColor = theme === 'dark' ? '#27272a' : '#e4e4e7';
 
     const kindByColumn = useMemo(() => {
         const m = new Map<string, 'numeric' | 'categorical'>();
@@ -185,8 +195,8 @@ export const DynamicChartGrid: React.FC<{
                                     type="button"
                                     onClick={resetZoom}
                                     className={themeClass(theme, {
-                                        dark: 'self-end rounded-lg border border-slate-600 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800',
-                                        light: 'self-end rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-100',
+                                        dark: 'self-end rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-800',
+                                        light: 'self-end rounded-lg border border-zinc-200 px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-100',
                                     })}
                                 >
                                     Весь диапазон
@@ -199,8 +209,10 @@ export const DynamicChartGrid: React.FC<{
             }
             const zoomHint = zoom
                 ? ' Повторный клик по столбцу — ещё глубже. «Весь диапазон» — сброс.'
-                : ' Клик по столбцу — приблизить к этому интервалу.';
+                : ' Клик по столбцу — приблизить к этому интервалу. Ползунок внизу — выбор диапазона бинов.';
             const fullAnalysis = `${analysis}${zoom ? '' : coreHint}${zoomHint}`;
+            const histTotal = values.length;
+            const brushFillHist = theme === 'dark' ? '#18181b' : '#fafafa';
             return {
                 hasData: true,
                 analysis: fullAnalysis,
@@ -211,8 +223,8 @@ export const DynamicChartGrid: React.FC<{
                                 type="button"
                                 onClick={resetZoom}
                                 className={themeClass(theme, {
-                                    dark: 'self-end rounded-lg border border-slate-600 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800',
-                                    light: 'self-end rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-100',
+                                    dark: 'self-end rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-800',
+                                    light: 'self-end rounded-lg border border-zinc-200 px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-100',
                                 })}
                             >
                                 Весь диапазон
@@ -220,32 +232,58 @@ export const DynamicChartGrid: React.FC<{
                         )}
                         <div className="min-h-0 flex-1">
                             <ResponsiveContainer width="100%" height="100%">
-                                <BarChart data={distribution} margin={{ top: 5, right: 20, left: 30, bottom: 5 }}>
+                                <BarChart data={distribution} margin={{ top: 8, right: 16, left: 8, bottom: 36 }}>
                                     <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
-                                    <XAxis dataKey="name" stroke={axisTextColor} fontSize={12} tick={{ fill: axisTextColor }} />
-                                    <YAxis stroke={axisTextColor} fontSize={12} tickFormatter={formatNumber} tick={{ fill: axisTextColor }} />
+                                    <XAxis dataKey="name" stroke={axisTextColor} fontSize={11} tick={{ fill: axisTextColor }} interval="preserveStartEnd" />
+                                    <YAxis stroke={axisTextColor} fontSize={11} tickFormatter={formatNumber} tick={{ fill: axisTextColor }} />
                                     <Tooltip
-                                        contentStyle={tooltipStyle}
-                                        formatter={(value: number, _k, payload) => {
-                                            const r = payload?.payload?.range as BinRange | undefined;
-                                            const label = r
-                                                ? `${r.min.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} — ${r.max.toLocaleString('ru-RU', { maximumFractionDigits: 2 })}`
-                                                : '';
-                                            return [value, label];
-                                        }}
                                         cursor={tooltipCursor}
+                                        content={({ active, payload }) => {
+                                            if (!active || !payload?.length) return null;
+                                            const row = payload[0]?.payload as { count?: number; range?: BinRange; name?: string };
+                                            const r = row.range;
+                                            const c = row.count ?? 0;
+                                            const pct = histTotal > 0 ? ((c / histTotal) * 100).toFixed(1) : '0';
+                                            const rangeLabel = r
+                                                ? `${r.min.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} — ${r.max.toLocaleString('ru-RU', { maximumFractionDigits: 2 })}`
+                                                : String(row.name ?? '');
+                                            return (
+                                                <div
+                                                    className="rounded-lg border px-3 py-2 text-xs shadow-lg"
+                                                    style={{ ...tooltipStyle, minWidth: '11rem' }}
+                                                >
+                                                    <p className="mb-1 font-semibold">Бин гистограммы</p>
+                                                    <p className="mb-2 opacity-90">{rangeLabel}</p>
+                                                    <p className="tabular-nums">
+                                                        <span className="opacity-75">Объектов: </span>
+                                                        <span className="font-medium">{formatNumber(c)}</span>
+                                                        <span className="opacity-75"> ({pct}% от выборки)</span>
+                                                    </p>
+                                                </div>
+                                            );
+                                        }}
                                     />
                                     <Bar
                                         dataKey="count"
                                         fill={chartFillColor}
                                         fillOpacity={BAR_OPACITY_INACTIVE + 0.15}
                                         cursor="pointer"
+                                        radius={[4, 4, 0, 0]}
                                         onClick={barItem => {
                                             const r = barItem?.payload?.range as BinRange | undefined;
                                             if (r && Number.isFinite(r.min) && Number.isFinite(r.max)) {
                                                 setHistZoomById(prev => ({ ...prev, [def.id]: { min: r.min, max: r.max } }));
                                             }
                                         }}
+                                    />
+                                    <Brush
+                                        dataKey="name"
+                                        height={28}
+                                        stroke={axisTextColor}
+                                        fill={brushFillHist}
+                                        fillOpacity={0.45}
+                                        tickFormatter={(v: string | number) => (typeof v === 'string' ? v : String(v))}
+                                        ariaLabel="Выбор диапазона по бинам"
                                     />
                                 </BarChart>
                             </ResponsiveContainer>
@@ -270,52 +308,25 @@ export const DynamicChartGrid: React.FC<{
                 })
                 .filter(Boolean) as Array<{ x: number; y: number }>;
             const scatterData = sampleArray(raw, MAX_SCATTER_POINTS);
-            const sortedScatter = [...scatterData].sort((a, b) => a.x - b.x);
-            const xDomain = axisDomainFromValues(raw.map(p => p.x));
-            const yDomain = axisDomainFromValues(raw.map(p => p.y));
-            const brushFill = theme === 'dark' ? '#1f2937' : '#f1f5f9';
             const analysis = raw.length
-                ? `Точек (в выборке): ${raw.length}. На графике — равномерная выборка до ${MAX_SCATTER_POINTS}. Масштаб осей — по основной массе точек. Ползунок внизу — выбор интервала по оси X (как лупа).`
+                ? `Точек в выборке: ${raw.length}. На графике — до ${MAX_SCATTER_POINTS} точек (равномерная подвыборка). Оси по основной массе значений; масштаб и сдвиг — см. подсказки над графиком.`
                 : undefined;
             return {
                 hasData: scatterData.length > 0,
                 analysis,
                 content: (
-                    <ResponsiveContainer width="100%" height="100%">
-                        <ScatterChart data={sortedScatter} margin={{ top: 5, right: 20, left: 30, bottom: 36 }}>
-                            <CartesianGrid stroke={scatterGridColor} />
-                            <XAxis
-                                type="number"
-                                dataKey="x"
-                                name={xCol}
-                                stroke={axisTextColor}
-                                fontSize={12}
-                                tick={{ fill: axisTextColor }}
-                                domain={xDomain ?? ['auto', 'auto']}
-                            />
-                            <YAxis
-                                type="number"
-                                dataKey="y"
-                                name={yCol}
-                                stroke={axisTextColor}
-                                fontSize={12}
-                                tickFormatter={formatNumber}
-                                tick={{ fill: axisTextColor }}
-                                domain={yDomain ?? ['auto', 'auto']}
-                            />
-                            <ZAxis type="number" range={[20, 100]} />
-                            <Tooltip cursor={tooltipCursor} contentStyle={tooltipStyle} />
-                            <Scatter data={sortedScatter} fill={chartFillColor} fillOpacity={0.65} />
-                            <Brush
-                                dataKey="x"
-                                height={28}
-                                stroke={axisTextColor}
-                                fill={brushFill}
-                                fillOpacity={0.45}
-                                tickFormatter={(v: number | string) => formatNumber(typeof v === 'number' ? v : Number(v))}
-                            />
-                        </ScatterChart>
-                    </ResponsiveContainer>
+                    <ScatterChartView
+                        xLabel={xCol}
+                        yLabel={yCol}
+                        raw={raw}
+                        displayPoints={scatterData}
+                        theme={theme}
+                        chartFillColor={chartFillColor}
+                        axisTextColor={axisTextColor}
+                        scatterGridColor={scatterGridColor}
+                        tooltipStyle={tooltipStyle}
+                        tooltipCursor={tooltipCursor}
+                    />
                 ),
             };
         }
@@ -343,18 +354,48 @@ export const DynamicChartGrid: React.FC<{
         } else {
             barData = entries.map(([name, count]) => ({ name: name.length > 40 ? `${name.slice(0, 37)}…` : name, count }));
         }
-        const analysis = `Категорий: ${entries.length}. Чаще всего: ${entries[0]?.[0] ?? '—'}.`;
+        const totalRows = data.length;
+        const analysis = `Категорий: ${entries.length}. Чаще всего: ${entries[0]?.[0] ?? '—'}. Ползунок внизу — выбор подмножества категорий на экране.`;
+        const brushFillCat = theme === 'dark' ? '#18181b' : '#fafafa';
         return {
             hasData: barData.length > 0,
             analysis,
             content: (
                 <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={barData} layout="vertical" margin={{ top: 5, right: 20, left: 12, bottom: 5 }}>
+                    <BarChart data={barData} layout="vertical" margin={{ top: 8, right: 12, left: 4, bottom: 36 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
-                        <XAxis type="number" stroke={axisTextColor} fontSize={12} tickFormatter={formatNumber} tick={{ fill: axisTextColor }} />
-                        <YAxis type="category" dataKey="name" stroke={axisTextColor} fontSize={11} width={120} tick={{ fill: axisTextColor }} />
-                        <Tooltip contentStyle={tooltipStyle} cursor={tooltipCursor} formatter={(v: number) => [v, 'шт.']} />
-                        <Bar dataKey="count" fill={chartFillColor} fillOpacity={BAR_OPACITY_INACTIVE + 0.2} />
+                        <XAxis type="number" stroke={axisTextColor} fontSize={11} tickFormatter={formatNumber} tick={{ fill: axisTextColor }} />
+                        <YAxis type="category" dataKey="name" stroke={axisTextColor} fontSize={10} width={118} tick={{ fill: axisTextColor }} />
+                        <Tooltip
+                            cursor={tooltipCursor}
+                            content={({ active, payload }) => {
+                                if (!active || !payload?.length) return null;
+                                const row = payload[0]?.payload as { name?: string; count?: number };
+                                const cnt = row.count ?? 0;
+                                const pctAll = totalRows > 0 ? ((cnt / totalRows) * 100).toFixed(1) : '0';
+                                return (
+                                    <div className="rounded-lg border px-3 py-2 text-xs shadow-lg" style={{ ...tooltipStyle, maxWidth: '18rem' }}>
+                                        <p className="mb-1 font-semibold">Категория</p>
+                                        <p className="mb-2 break-words opacity-95">{row.name}</p>
+                                        <p className="tabular-nums">
+                                            <span className="opacity-75">Строк: </span>
+                                            <span className="font-medium">{formatNumber(cnt)}</span>
+                                            <span className="opacity-75"> ({pctAll}% от выборки)</span>
+                                        </p>
+                                    </div>
+                                );
+                            }}
+                        />
+                        <Bar dataKey="count" fill={chartFillColor} fillOpacity={BAR_OPACITY_INACTIVE + 0.2} radius={[0, 4, 4, 0]} />
+                        <Brush
+                            dataKey="name"
+                            height={28}
+                            stroke={axisTextColor}
+                            fill={brushFillCat}
+                            fillOpacity={0.45}
+                            tickFormatter={(v: string | number) => (typeof v === 'string' && v.length > 14 ? `${v.slice(0, 12)}…` : String(v))}
+                            ariaLabel="Диапазон категорий"
+                        />
                     </BarChart>
                 </ResponsiveContainer>
             ),
@@ -368,10 +409,10 @@ export const DynamicChartGrid: React.FC<{
     if (!charts.length) {
         return (
             <div className={themeClass(theme, {
-                dark: 'flex h-full min-h-[200px] items-center justify-center rounded-3xl border border-dashed border-slate-600 p-6 text-center text-sm text-slate-400',
-                light: 'flex h-full min-h-[200px] items-center justify-center rounded-3xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500',
+                dark: 'flex h-full min-h-[200px] items-center justify-center rounded-3xl border border-dashed border-zinc-700 p-8 text-center text-sm text-zinc-500',
+                light: 'flex h-full min-h-[200px] items-center justify-center rounded-3xl border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-500',
             })}>
-                Добавьте хотя бы один график в панели выше: выберите тип и столбцы из вашего CSV.
+                Добавьте график в правой панели: пресет или свой тип визуализации.
             </div>
         );
     }
@@ -380,20 +421,28 @@ export const DynamicChartGrid: React.FC<{
 
     return (
         <>
-            <div className="grid auto-rows-[minmax(300px,auto)] grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+            <div className="grid auto-rows-[minmax(340px,auto)] grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                 {charts.map(def => {
                     const { content, analysis, hasData } = renderChart(def);
                     return (
-                        <ChartCard key={def.id} title={def.title} theme={theme} onExpand={() => setExpanded(def)}>
+                        <ChartCard
+                            key={def.id}
+                            title={def.title}
+                            theme={theme}
+                            exportFilenameSlug={def.title}
+                            onExpand={() => setExpanded(def)}
+                            footer={
+                                analysis && hasData ? (
+                                    <div className={themeClass(theme, {
+                                        dark: 'mt-5 text-sm leading-relaxed text-zinc-400',
+                                        light: 'mt-5 text-sm leading-relaxed text-zinc-600',
+                                    })}>
+                                        {analysis}
+                                    </div>
+                                ) : null
+                            }
+                        >
                             {content}
-                            {analysis && hasData && (
-                                <div className={themeClass(theme, {
-                                    dark: 'mt-4 text-sm leading-6 text-slate-200/85',
-                                    light: 'mt-4 text-sm leading-6 text-slate-600',
-                                })}>
-                                    {analysis}
-                                </div>
-                            )}
                         </ChartCard>
                     );
                 })}
@@ -402,8 +451,8 @@ export const DynamicChartGrid: React.FC<{
             {expanded && expandedRendered && (
                 <div
                     className={themeClass(theme, {
-                        dark: 'fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-3 backdrop-blur-sm sm:p-6',
-                        light: 'fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-3 backdrop-blur-sm sm:p-6',
+                        dark: 'fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm sm:p-8',
+                        light: 'fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/25 p-4 backdrop-blur-sm sm:p-8',
                     })}
                     role="presentation"
                     onClick={() => setExpanded(null)}
@@ -413,43 +462,73 @@ export const DynamicChartGrid: React.FC<{
                         aria-modal="true"
                         aria-labelledby="chart-expand-title"
                         className={themeClass(theme, {
-                            dark: 'flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-3xl border border-slate-600/80 bg-slate-950 shadow-2xl shadow-black/40',
-                            light: 'flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl shadow-slate-400/20',
+                            dark: 'flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-[1.75rem] border border-zinc-800 bg-zinc-950 shadow-[0_24px_64px_-12px_rgba(0,0,0,0.55)]',
+                            light: 'flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-[1.75rem] border border-zinc-200/95 bg-white shadow-[0_24px_64px_-16px_rgba(0,0,0,0.12)]',
                         })}
                         onClick={e => e.stopPropagation()}
                     >
                         <div
-                            className={themeClass(theme, {
-                                dark: 'flex items-center justify-between gap-3 border-b border-slate-700/80 px-4 py-3 sm:px-5',
-                                light: 'flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 sm:px-5',
-                            })}
+                            className={`no-export ${themeClass(theme, {
+                                dark: 'flex items-center justify-between gap-3 border-b border-zinc-800 px-5 py-4 sm:px-6',
+                                light: 'flex items-center justify-between gap-3 border-b border-zinc-200 px-5 py-4 sm:px-6',
+                            })}`}
                         >
                             <h2 id="chart-expand-title" className={`font-display text-base font-semibold sm:text-lg ${themeClass(theme, {
-                                dark: 'text-white',
-                                light: 'text-slate-900',
+                                dark: 'text-zinc-50',
+                                light: 'text-zinc-900',
                             })}`}>
                                 {expanded.title}
                             </h2>
-                            <button
-                                type="button"
-                                onClick={() => setExpanded(null)}
-                                className={themeClass(theme, {
-                                    dark: 'rounded-xl p-2 text-slate-400 hover:bg-slate-800 hover:text-white',
-                                    light: 'rounded-xl p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900',
-                                })}
-                                aria-label="Закрыть"
-                            >
-                                <CloseIcon />
-                            </button>
+                            <div className="flex items-center gap-1.5">
+                                <button
+                                    type="button"
+                                    disabled={expandedExportBusy}
+                                    onClick={() => void exportExpanded('png')}
+                                    className={themeClass(theme, {
+                                        dark: 'rounded-lg border border-zinc-700/90 px-3 py-2 text-xs font-medium text-zinc-200 transition hover:bg-zinc-800 disabled:opacity-50',
+                                        light: 'rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-medium text-zinc-800 shadow-sm transition hover:border-zinc-300 disabled:opacity-50',
+                                    })}
+                                >
+                                    PNG
+                                </button>
+                                <button
+                                    type="button"
+                                    disabled={expandedExportBusy}
+                                    onClick={() => void exportExpanded('pdf')}
+                                    className={themeClass(theme, {
+                                        dark: 'rounded-lg border border-zinc-700/90 px-3 py-2 text-xs font-medium text-zinc-200 transition hover:bg-zinc-800 disabled:opacity-50',
+                                        light: 'rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-medium text-zinc-800 shadow-sm transition hover:border-zinc-300 disabled:opacity-50',
+                                    })}
+                                >
+                                    PDF
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setExpanded(null)}
+                                    className={themeClass(theme, {
+                                        dark: 'rounded-xl p-2 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-100',
+                                        light: 'rounded-xl p-2 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900',
+                                    })}
+                                    aria-label="Закрыть"
+                                >
+                                    <CloseIcon />
+                                </button>
+                            </div>
                         </div>
-                        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4 sm:p-5">
-                            <div className="h-[75vh] max-h-[780px] min-h-[320px] w-full shrink-0">
+                        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-5 sm:p-7">
+                            <div
+                                ref={expandedExportRef}
+                                className={`h-[min(82vh,900px)] min-h-[380px] w-full shrink-0 ${themeClass(theme, {
+                                    dark: 'rounded-2xl bg-zinc-950/40 p-3',
+                                    light: 'rounded-2xl bg-zinc-50/80 p-3',
+                                })}`}
+                            >
                                 {expandedRendered.content}
                             </div>
                             {expandedRendered.analysis && expandedRendered.hasData && (
                                 <p className={themeClass(theme, {
-                                    dark: 'text-sm leading-6 text-slate-300',
-                                    light: 'text-sm leading-6 text-slate-600',
+                                    dark: 'text-sm leading-relaxed text-zinc-400',
+                                    light: 'text-sm leading-relaxed text-zinc-600',
                                 })}>
                                     {expandedRendered.analysis}
                                 </p>

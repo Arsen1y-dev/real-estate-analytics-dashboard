@@ -33,6 +33,23 @@ export function isAreaFilterDirty(filters: FilterSettings, baseline: FilterSetti
     );
 }
 
+/** Отличается от базового (пустой массив = все комнатности). */
+export function isRoomsFilterDirty(filters: FilterSettings, baseline: FilterSettings): boolean {
+    if (filters.rooms.length !== baseline.rooms.length) return true;
+    if (filters.rooms.length === 0) return false;
+    const a = [...filters.rooms].sort((x, y) => x - y);
+    const b = [...baseline.rooms].sort((x, y) => x - y);
+    return a.some((v, i) => v !== b[i]);
+}
+
+export function isAnyFilterDirty(filters: FilterSettings, baseline: FilterSettings): boolean {
+    return (
+        isPriceFilterDirty(filters, baseline) ||
+        isAreaFilterDirty(filters, baseline) ||
+        isRoomsFilterDirty(filters, baseline)
+    );
+}
+
 export function rowPassesFilters(row: DataRow, filters: FilterSettings, summary: DataSummary): boolean {
     const c = summary.coreColumnMap;
 
