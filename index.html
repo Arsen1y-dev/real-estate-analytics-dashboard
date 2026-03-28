@@ -6,12 +6,12 @@
   <title>Интерактивный дашборд недвижимости</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,600;0,700;1,600&family=Onest:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     :root {
-      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      --font-display: 'Manrope', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      --font-sans: 'Onest', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      --font-display: 'Lora', 'Onest', ui-serif, Georgia, 'Times New Roman', serif;
       font-family: var(--font-sans);
       font-feature-settings: 'tnum' 1, 'lnum' 1;
     }
@@ -29,25 +29,10 @@
       font-variant-numeric: tabular-nums;
       font-feature-settings: 'tnum' 1, 'lnum' 1;
     }
-
-    /* Custom scrollbar for a better dark mode aesthetic */
-    ::-webkit-scrollbar {
-      width: 8px;
-    }
-    ::-webkit-scrollbar-track {
-      background: #1f2937; /* bg-gray-800 */
-    }
-    ::-webkit-scrollbar-thumb {
-      background: #4b5563; /* bg-gray-600 */
-      border-radius: 4px;
-    }
-    ::-webkit-scrollbar-thumb:hover {
-      background: #6b7280; /* bg-gray-500 */
-    }
   </style>
 </head>
-<body class="bg-gray-900 text-gray-200">
+<body class="min-h-screen bg-slate-950 text-slate-200 antialiased">
   <div id="root"></div>
-  <script type="module" src="/index.tsx"></script>
+  <script type="module" src="/src/main.tsx"></script>
 </body>
 </html>

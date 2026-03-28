@@ -1,12 +1,12 @@
-import type { ApartmentData, DataSummary } from './types';
+import type { DataRow, DataSummary } from '@/types';
 
-const STORAGE_KEY = 'realty-dashboard-dataset-v1';
+const STORAGE_KEY = 'realty-dashboard-dataset-v2';
 const MAX_CACHE_CHARS = 4_500_000;
 
 export interface CachedDataset {
-    version: 1;
+    version: 2;
     fileKey: string;
-    data: ApartmentData[];
+    data: DataRow[];
     summary: DataSummary;
 }
 
@@ -21,7 +21,10 @@ export function loadCachedDataset(): CachedDataset | null {
             return null;
         }
         const parsed = JSON.parse(raw) as CachedDataset;
-        if (parsed?.version !== 1 || !Array.isArray(parsed.data) || !parsed.summary || typeof parsed.fileKey !== 'string') {
+        if (parsed?.version !== 2 || !Array.isArray(parsed.data) || !parsed.summary || typeof parsed.fileKey !== 'string') {
+            return null;
+        }
+        if (!Array.isArray(parsed.summary.columnOrder) || !Array.isArray(parsed.summary.columns)) {
             return null;
         }
         return parsed;
@@ -40,10 +43,10 @@ export function tryGetDatasetForFile(file: File): CachedDataset | null {
     return null;
 }
 
-export function saveCachedDataset(file: File, data: ApartmentData[], summary: DataSummary): void {
+export function saveCachedDataset(file: File, data: DataRow[], summary: DataSummary): void {
     try {
         const payload: CachedDataset = {
-            version: 1,
+            version: 2,
             fileKey: makeFileKey(file),
             data,
             summary,

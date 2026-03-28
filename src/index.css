@@ -1,0 +1,61 @@
+/* Глобальная база: шрифты задаются в index.html; здесь — сетка страницы и скроллбар под тему */
+
+html {
+    height: 100%;
+    -webkit-text-size-adjust: 100%;
+}
+
+body {
+    margin: 0;
+    min-height: 100%;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+    min-height: 100%;
+}
+
+/* Скроллбар: тёмная тема по умолчанию, светлая при data-theme на <html> */
+html[data-theme='dark'] ::-webkit-scrollbar,
+html:not([data-theme]) ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+html[data-theme='dark'] ::-webkit-scrollbar-track,
+html:not([data-theme]) ::-webkit-scrollbar-track {
+    background: rgb(15 23 42);
+}
+
+html[data-theme='dark'] ::-webkit-scrollbar-thumb,
+html:not([data-theme]) ::-webkit-scrollbar-thumb {
+    background: rgb(71 85 105);
+    border-radius: 6px;
+    border: 2px solid rgb(15 23 42);
+}
+
+html[data-theme='dark'] ::-webkit-scrollbar-thumb:hover,
+html:not([data-theme]) ::-webkit-scrollbar-thumb:hover {
+    background: rgb(100 116 139);
+}
+
+html[data-theme='light'] ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+html[data-theme='light'] ::-webkit-scrollbar-track {
+    background: rgb(241 245 249);
+}
+
+html[data-theme='light'] ::-webkit-scrollbar-thumb {
+    background: rgb(148 163 184);
+    border-radius: 6px;
+    border: 2px solid rgb(241 245 249);
+}
+
+html[data-theme='light'] ::-webkit-scrollbar-thumb:hover {
+    background: rgb(100 116 139);
+}
