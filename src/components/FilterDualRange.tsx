@@ -42,6 +42,8 @@ export const FilterDualRange: React.FC<Props> = ({
 
     const span = boundMax - boundMin;
     const degenerate = !Number.isFinite(span) || span <= 0;
+    const safeStep = Number.isFinite(step) && step > 0 ? step : 1;
+    const inputMax = degenerate ? boundMax : boundMin + Math.ceil((boundMax - boundMin) / safeStep) * safeStep;
 
     const low = clamp(valueMin, boundMin, boundMax);
     const high = clamp(valueMax, boundMin, boundMax);
@@ -100,8 +102,8 @@ export const FilterDualRange: React.FC<Props> = ({
             <input
                 type="range"
                 min={boundMin}
-                max={boundMax}
-                step={step}
+                max={inputMax}
+                step={safeStep}
                 value={safeLow}
                 aria-label="Минимум диапазона"
                 aria-labelledby={ariaLabelledBy}
@@ -113,8 +115,8 @@ export const FilterDualRange: React.FC<Props> = ({
             <input
                 type="range"
                 min={boundMin}
-                max={boundMax}
-                step={step}
+                max={inputMax}
+                step={safeStep}
                 value={safeHigh}
                 aria-label="Максимум диапазона"
                 aria-labelledby={ariaLabelledBy}

@@ -1,11 +1,20 @@
 export function formatNumber(num: number): string {
-    if (num >= 1e6) {
-        return `${(num / 1e6).toFixed(1)} млн`;
-    }
-    if (num >= 1e3) {
-        return `${(num / 1e3).toFixed(1)} тыс`;
-    }
-    return num.toString();
+    if (!Number.isFinite(num)) return '0';
+    const abs = Math.abs(num);
+    const sign = num < 0 ? '-' : '';
+
+    const compact = (value: number, suffix: string): string => {
+        const rounded = Number.parseFloat(value.toFixed(1));
+        const text = Number.isInteger(rounded) ? String(rounded) : rounded.toLocaleString('ru-RU', { maximumFractionDigits: 1 });
+        return `${sign}${text} ${suffix}`;
+    };
+
+    if (abs >= 1e6) return compact(abs / 1e6, 'млн');
+    if (abs >= 1e3) return compact(abs / 1e3, 'тыс');
+    if (abs >= 100) return `${sign}${Math.round(abs).toLocaleString('ru-RU')}`;
+    if (abs >= 10) return `${sign}${abs.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}`;
+    if (abs >= 1) return `${sign}${abs.toLocaleString('ru-RU', { maximumFractionDigits: 2 })}`;
+    return `${sign}${abs.toLocaleString('ru-RU', { maximumFractionDigits: 3 })}`;
 }
 
 /**

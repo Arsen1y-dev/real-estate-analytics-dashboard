@@ -12,7 +12,7 @@ import {
 } from '@/domain/chartPresets';
 import { GripVerticalIcon } from '@/components/icons';
 import { ColumnSearchSelect, type ColumnQuickPick } from '@/components/ColumnSearchSelect';
-import { effectiveHistogramColumn, getPriceColumnRecommendations } from '@/domain/chartRecommendations';
+import { formatColumnLabel } from '@/utils/displayLabel';
 
 const CHART_TYPE_LABELS: Record<UserChartType, { label: string; hint: string }> = {
     histogram: { label: 'Гистограмма', hint: 'Распределение числового столбца' },
@@ -50,7 +50,7 @@ export const ChartSidebar: React.FC<{
 }> = ({ summary, charts, onChange, disabled, theme }) => {
     const numericCols = useMemo(() => summary.columns.filter(c => c.kind === 'numeric').map(c => c.name), [summary.columns]);
     const categoricalCols = useMemo(
-        () => summary.columns.filter(c => c.kind === 'categorical').map(c => c.name),
+        () => summary.columns.filter(c => c.kind === 'categorical' && c.name !== 'houseType').map(c => c.name),
         [summary.columns]
     );
 
@@ -81,48 +81,6 @@ export const ChartSidebar: React.FC<{
     const canAddHistogram = numericCols.length > 0;
     const canAddScatter = numericCols.length >= 2;
     const canAddCategory = categoricalCols.length > 0;
-
-    const priceCol = summary.coreColumnMap.price;
-    const areaCol = summary.coreColumnMap.area;
-    const effectiveHistCol = effectiveHistogramColumn(column, numericCols);
-    const priceSelectedForReco =
-        chartType === 'histogram' &&
-        !!priceCol &&
-        numericCols.includes(priceCol) &&
-        effectiveHistCol === priceCol;
-
-    const priceRecommendations = useMemo(
-        () =>
-            getPriceColumnRecommendations(summary, {
-                areaAvailable: !!(areaCol && numericCols.includes(areaCol)),
-                scatterAvailable: canAddScatter,
-            }),
-        [summary, areaCol, canAddScatter, numericCols]
-    );
-
-    const applyScatterPriceAreaForm = () => {
-        if (!priceCol || !areaCol || !numericCols.includes(areaCol)) return;
-        setChartType('scatter');
-        window.setTimeout(() => {
-            setXColumn(priceCol);
-            setYColumn(areaCol);
-        }, 0);
-    };
-
-    const addScatterPriceAreaChart = () => {
-        if (!priceCol || !areaCol || !canAddScatter) return;
-        onChange([
-            ...charts,
-            {
-                id: newChartId(),
-                type: 'scatter',
-                column: priceCol,
-                xColumn: priceCol,
-                yColumn: areaCol,
-                title: `${priceCol} × ${areaCol}`,
-            },
-        ]);
-    };
 
     const addChart = () => {
         if (chartType === 'histogram') {
@@ -161,7 +119,7 @@ export const ChartSidebar: React.FC<{
                     id: newChartId(),
                     type: 'categoryBars',
                     column: col,
-                    title: title.trim() || `По категориям: ${col}`,
+                    title: title.trim() || `По категориям: ${formatColumnLabel(col)}`,
                 },
             ]);
         }
@@ -462,76 +420,11 @@ export const ChartSidebar: React.FC<{
                             theme={theme}
                             searchPlaceholder="Поиск среди числовых столбцов…"
                             quickPicks={popularQuickPicks.filter(p => numericCols.includes(p.column))}
+                            renderOptionLabel={formatColumnLabel}
                             emptyText={
                                 canAddHistogram ? 'Нет совпадений' : 'Нет числовых столбцов в данных'
                             }
                         />
-                        {priceSelectedForReco && priceRecommendations.length > 0 && (
-                            <div
-                                className={themeClass(theme, {
-                                    dark: 'rounded-xl border border-indigo-500/25 bg-indigo-500/[0.06] px-3.5 py-3',
-                                    light: 'rounded-xl border border-indigo-200/90 bg-indigo-50/60 px-3.5 py-3',
-                                })}
-                            >
-                                <p
-                                    className={themeClass(theme, {
-                                        dark: 'text-[10px] font-semibold uppercase tracking-[0.12em] text-indigo-300/95',
-                                        light: 'text-[10px] font-semibold uppercase tracking-[0.12em] text-indigo-800',
-                                    })}
-                                >
-                                    Рекомендации
-                                </p>
-                                <ul className="mt-2.5 space-y-3">
-                                    {priceRecommendations.map(rec => (
-                                        <li key={rec.id}>
-                                            <p
-                                                className={themeClass(theme, {
-                                                    dark: 'text-sm font-medium text-zinc-100',
-                                                    light: 'text-sm font-medium text-zinc-900',
-                                                })}
-                                            >
-                                                {rec.id === 'histogram-price' && '✓ '}
-                                                {rec.title}
-                                            </p>
-                                            <p
-                                                className={themeClass(theme, {
-                                                    dark: 'mt-0.5 text-xs leading-relaxed text-zinc-500',
-                                                    light: 'mt-0.5 text-xs leading-relaxed text-zinc-600',
-                                                })}
-                                            >
-                                                {rec.description}
-                                            </p>
-                                            {rec.id === 'scatter-price-area' && areaCol && (
-                                                <div className="mt-2 flex flex-wrap gap-2">
-                                                    <button
-                                                        type="button"
-                                                        disabled={disabled || !canAddScatter}
-                                                        onClick={applyScatterPriceAreaForm}
-                                                        className={themeClass(theme, {
-                                                            dark: 'rounded-lg border border-indigo-500/35 bg-indigo-500/15 px-2.5 py-1.5 text-xs font-medium text-indigo-100 transition hover:bg-indigo-500/25 disabled:opacity-45',
-                                                            light: 'rounded-lg border border-indigo-200 bg-white px-2.5 py-1.5 text-xs font-medium text-indigo-900 shadow-sm transition hover:bg-indigo-50 disabled:opacity-45',
-                                                        })}
-                                                    >
-                                                        Настроить точечный график
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        disabled={disabled || !canAddScatter}
-                                                        onClick={addScatterPriceAreaChart}
-                                                        className={themeClass(theme, {
-                                                            dark: 'rounded-lg border border-zinc-600 bg-zinc-900/80 px-2.5 py-1.5 text-xs font-medium text-zinc-200 transition hover:bg-zinc-800 disabled:opacity-45',
-                                                            light: 'rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-800 shadow-sm transition hover:bg-zinc-50 disabled:opacity-45',
-                                                        })}
-                                                    >
-                                                        Добавить на холст
-                                                    </button>
-                                                </div>
-                                            )}
-                                        </li>
-                                    ))}
-                                </ul>
-                            </div>
-                        )}
                     </>
                 )}
 
@@ -547,6 +440,7 @@ export const ChartSidebar: React.FC<{
                             theme={theme}
                             searchPlaceholder="Поиск среди числовых столбцов…"
                             quickPicks={popularQuickPicks.filter(p => numericCols.includes(p.column))}
+                            renderOptionLabel={formatColumnLabel}
                             emptyText={
                                 canAddScatter ? 'Нет совпадений' : 'Нужно минимум два числовых столбца'
                             }
@@ -561,6 +455,7 @@ export const ChartSidebar: React.FC<{
                             theme={theme}
                             searchPlaceholder="Поиск среди числовых столбцов…"
                             quickPicks={popularQuickPicks.filter(p => numericCols.includes(p.column))}
+                            renderOptionLabel={formatColumnLabel}
                             emptyText={
                                 canAddScatter ? 'Нет совпадений' : 'Нужно минимум два числовых столбца'
                             }
@@ -579,6 +474,7 @@ export const ChartSidebar: React.FC<{
                         theme={theme}
                         searchPlaceholder="Поиск среди категориальных столбцов…"
                         quickPicks={popularQuickPicks.filter(p => categoricalCols.includes(p.column))}
+                        renderOptionLabel={formatColumnLabel}
                         emptyText={
                             canAddCategory ? 'Нет совпадений' : 'Нет категориальных столбцов в данных'
                         }

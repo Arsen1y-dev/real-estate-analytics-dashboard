@@ -8,6 +8,7 @@ import { formatNumber } from '@/utils/format';
 import { median, quantile } from '@/utils/stats';
 import { sampleArray, MAX_SCATTER_POINTS } from '@/utils/sample';
 import { isFiniteNumber } from '@/domain/dataset';
+import { canonicalCategoryKey, formatCategoryValue, formatColumnLabel, truncateDisplayLabel } from '@/utils/displayLabel';
 import { ChartCard } from '@/components/ChartCard';
 import { EmptyChartState } from '@/components/EmptyChartState';
 import { CloseIcon } from '@/components/icons';
@@ -26,6 +27,8 @@ function getBinRange(start: number, binSize: number, index: number, bins: number
     return { min, max: maxBoundary };
 }
 
+const HIST_BINS = 20;
+
 function formatBinTick(min: number, max: number): string {
     const span = max - min;
     if (span <= 0) return formatNumber(min);
@@ -34,12 +37,12 @@ function formatBinTick(min: number, max: number): string {
     return formatNumber(Math.round(min));
 }
 
-const HIST_BINS = 20;
-
-function buildHistogram(
-    values: number[],
-    zoom: { min: number; max: number } | undefined
-): { distribution: Array<{ name: string; count: number; range: BinRange }>; analysis: string; empty: boolean; coreHint: string } {
+function buildHistogram(values: number[], zoom: { min: number; max: number } | undefined): {
+    distribution: Array<{ name: string; count: number; range: BinRange }>;
+    analysis: string;
+    empty: boolean;
+    coreHint: string;
+} {
     if (!values.length) {
         return { distribution: [], analysis: '', empty: true, coreHint: '' };
     }
@@ -50,6 +53,7 @@ function buildHistogram(
         if (!inRange.length) {
             return { distribution: [], analysis: '', empty: true, coreHint: '' };
         }
+
         const binStart = zMin;
         const binEnd = zMax;
         const range = binEnd - binStart || 1;
@@ -108,7 +112,7 @@ function buildHistogram(
     }
     const coreHint = useCore ? ' Интервалы по 2–98% выборки, крайние столбцы — хвосты распределения.' : '';
     const analysis =
-        `Объектов: ${values.length}. Медиана: ${formatNumber(Math.round(median(values)))}. IQR: ${formatNumber(Math.round(quantile(values, 0.75) - quantile(values, 0.25)))}.${coreHint}`;
+        `Объектов: ${values.length}. Медиана: ${formatNumber(Math.round(median(values)))}. IQR: ${formatNumber(Math.round(quantile(values, 0.75) - quantile(values, 0.25)))}.`;
     return { distribution, analysis, empty: false, coreHint };
 }
 
@@ -121,8 +125,8 @@ export const DynamicChartGrid: React.FC<{
     const [expanded, setExpanded] = useState<UserChartDefinition | null>(null);
     const expandedExportRef = useRef<HTMLDivElement>(null);
     const [expandedExportBusy, setExpandedExportBusy] = useState(false);
-    /** Клик по столбцу гистограммы — приближение к интервалу этого бина. */
     const [histZoomById, setHistZoomById] = useState<Record<string, { min: number; max: number }>>({});
+    const [categoryBrushById, setCategoryBrushById] = useState<Record<string, { start: number; end: number }>>({});
 
     useEffect(() => {
         if (!expanded) return;
@@ -132,6 +136,45 @@ export const DynamicChartGrid: React.FC<{
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
     }, [expanded]);
+
+    useEffect(() => {
+        const ids = new Set(charts.map(c => c.id));
+        setHistZoomById(prev => {
+            const next: Record<string, { min: number; max: number }> = {};
+            let changed = false;
+            for (const [id, range] of Object.entries(prev)) {
+                if (
+                    ids.has(id) &&
+                    range &&
+                    Number.isFinite((range as { min?: number }).min) &&
+                    Number.isFinite((range as { max?: number }).max)
+                ) {
+                    next[id] = range as { min: number; max: number };
+                }
+                else changed = true;
+            }
+            return changed ? next : prev;
+        });
+    }, [charts]);
+
+    useEffect(() => {
+        const ids = new Set(charts.map(c => c.id));
+        setCategoryBrushById(prev => {
+            const next: Record<string, { start: number; end: number }> = {};
+            let changed = false;
+            for (const [id, range] of Object.entries(prev)) {
+                if (
+                    ids.has(id) &&
+                    range &&
+                    Number.isInteger((range as { start?: number }).start) &&
+                    Number.isInteger((range as { end?: number }).end)
+                ) {
+                    next[id] = range as { start: number; end: number };
+                } else changed = true;
+            }
+            return changed ? next : prev;
+        });
+    }, [charts]);
 
     const exportExpanded = useCallback(
         async (kind: 'png' | 'pdf') => {
@@ -166,13 +209,75 @@ export const DynamicChartGrid: React.FC<{
         return m;
     }, [summary.columns]);
 
+    const histogramValuesByColumn = useMemo(() => {
+        const needed = new Set<string>(
+            charts.filter(c => c.type === 'histogram').map(c => c.column).filter(col => kindByColumn.get(col) === 'numeric')
+        );
+        const out = new Map<string, number[]>();
+        for (const col of needed) {
+            out.set(col, data.map(d => d[col]).filter(isFiniteNumber));
+        }
+        return out;
+    }, [charts, data, kindByColumn]);
+
+    const scatterRawByChartId = useMemo(() => {
+        const out = new Map<string, Array<{ x: number; y: number }>>();
+        for (const def of charts) {
+            if (def.type !== 'scatter') continue;
+            const xCol = def.xColumn ?? def.column;
+            const yCol = def.yColumn;
+            if (!yCol || kindByColumn.get(xCol) !== 'numeric' || kindByColumn.get(yCol) !== 'numeric') continue;
+            const raw = data
+                .map(d => {
+                    const x = d[xCol];
+                    const y = d[yCol];
+                    if (!isFiniteNumber(x) || !isFiniteNumber(y)) return null;
+                    return { x, y };
+                })
+                .filter(Boolean) as Array<{ x: number; y: number }>;
+            out.set(def.id, raw);
+        }
+        return out;
+    }, [charts, data, kindByColumn]);
+
+    const categoryEntriesByColumn = useMemo(() => {
+        const needed = new Set<string>(
+            charts.filter(c => c.type === 'categoryBars').map(c => c.column).filter(col => kindByColumn.get(col) === 'categorical')
+        );
+        const out = new Map<string, Array<{ canonical: string; fullLabel: string; count: number }>>();
+        for (const col of needed) {
+            const counts = new Map<string, { count: number; fullLabel: string }>();
+            for (const row of data) {
+                const v = row[col];
+                const canonical = canonicalCategoryKey(v);
+                const fullLabel = formatCategoryValue(v);
+                const prev = counts.get(canonical);
+                if (!prev) {
+                    counts.set(canonical, { count: 1, fullLabel });
+                    continue;
+                }
+                counts.set(canonical, {
+                    count: prev.count + 1,
+                    fullLabel: fullLabel.length > prev.fullLabel.length ? fullLabel : prev.fullLabel,
+                });
+            }
+            out.set(
+                col,
+                Array.from(counts.entries())
+                    .map(([canonical, payload]) => ({ canonical, fullLabel: payload.fullLabel, count: payload.count }))
+                    .sort((a, b) => b.count - a.count)
+            );
+        }
+        return out;
+    }, [charts, data, kindByColumn]);
+
     const renderChart = (def: UserChartDefinition): { content: React.ReactNode; analysis?: string; hasData: boolean } => {
         if (def.type === 'histogram') {
             const col = def.column;
             if (kindByColumn.get(col) !== 'numeric') {
                 return { content: <EmptyChartState theme={theme} message={`Столбец «${col}» не числовой`} />, hasData: false };
             }
-            const values = data.map(d => d[col]).filter(isFiniteNumber);
+            const values = histogramValuesByColumn.get(col) ?? [];
             if (!values.length) {
                 return { content: <EmptyChartState theme={theme} />, hasData: false };
             }
@@ -189,7 +294,7 @@ export const DynamicChartGrid: React.FC<{
                 return {
                     hasData: false,
                     content: (
-                        <div className="flex h-full min-h-[200px] flex-col gap-2">
+                        <div className="flex min-h-0 flex-1 flex-col gap-2">
                             {zoom && (
                                 <button
                                     type="button"
@@ -208,34 +313,50 @@ export const DynamicChartGrid: React.FC<{
                 };
             }
             const zoomHint = zoom
-                ? ' Повторный клик по столбцу — ещё глубже. «Весь диапазон» — сброс.'
-                : ' Клик по столбцу — приблизить к этому интервалу. Ползунок внизу — выбор диапазона бинов.';
+                ? ' Повторный клик по бину — ещё глубже. «Весь диапазон» — сброс.'
+                : ' Клик по бину — приблизить к этому интервалу. Ползунок внизу — выбор диапазона бинов.';
             const fullAnalysis = `${analysis}${zoom ? '' : coreHint}${zoomHint}`;
             const histTotal = values.length;
-            const brushFillHist = theme === 'dark' ? '#18181b' : '#fafafa';
+            const brushFillHist = theme === 'dark' ? '#111827' : '#eef2ff';
             return {
                 hasData: true,
                 analysis: fullAnalysis,
                 content: (
-                    <div className="flex h-full min-h-[200px] flex-col gap-1">
+                    <div className="flex h-full min-h-0 w-full flex-1 flex-col gap-1">
                         {zoom && (
                             <button
                                 type="button"
                                 onClick={resetZoom}
                                 className={themeClass(theme, {
-                                    dark: 'self-end rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-800',
-                                    light: 'self-end rounded-lg border border-zinc-200 px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-100',
+                                    dark: 'shrink-0 self-end rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-800',
+                                    light: 'shrink-0 self-end rounded-lg border border-zinc-200 px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-100',
                                 })}
                             >
                                 Весь диапазон
                             </button>
                         )}
-                        <div className="min-h-0 flex-1">
+                        <div className="relative h-full min-h-[12rem] w-full min-w-0 flex-1">
                             <ResponsiveContainer width="100%" height="100%">
-                                <BarChart data={distribution} margin={{ top: 8, right: 16, left: 8, bottom: 36 }}>
+                                <BarChart data={distribution} margin={{ top: 12, right: 20, left: 14, bottom: 50 }}>
                                     <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
-                                    <XAxis dataKey="name" stroke={axisTextColor} fontSize={11} tick={{ fill: axisTextColor }} interval="preserveStartEnd" />
-                                    <YAxis stroke={axisTextColor} fontSize={11} tickFormatter={formatNumber} tick={{ fill: axisTextColor }} />
+                                    <XAxis
+                                        dataKey="name"
+                                        stroke={axisTextColor}
+                                        fontSize={11}
+                                        tick={{ fill: axisTextColor }}
+                                        interval="preserveStartEnd"
+                                        tickMargin={8}
+                                        tickFormatter={(v: string | number) =>
+                                            typeof v === 'string' ? truncateDisplayLabel(v, 10) : String(v)
+                                        }
+                                    />
+                                    <YAxis
+                                        stroke={axisTextColor}
+                                        fontSize={11}
+                                        tickFormatter={formatNumber}
+                                        tick={{ fill: axisTextColor }}
+                                        width={56}
+                                    />
                                     <Tooltip
                                         cursor={tooltipCursor}
                                         content={({ active, payload }) => {
@@ -278,12 +399,28 @@ export const DynamicChartGrid: React.FC<{
                                     />
                                     <Brush
                                         dataKey="name"
-                                        height={28}
-                                        stroke={axisTextColor}
+                                        height={26}
+                                        stroke={theme === 'dark' ? '#818cf8' : '#6366f1'}
                                         fill={brushFillHist}
-                                        fillOpacity={0.45}
-                                        tickFormatter={(v: string | number) => (typeof v === 'string' ? v : String(v))}
+                                        fillOpacity={0.62}
+                                        travellerWidth={10}
+                                        tickFormatter={() => ''}
                                         ariaLabel="Выбор диапазона по бинам"
+                                        onChange={({ startIndex, endIndex }) => {
+                                            if (typeof startIndex !== 'number' || typeof endIndex !== 'number') return;
+                                            const n = distribution.length;
+                                            if (n === 0) return;
+                                            if (startIndex <= 0 && endIndex >= n - 1) {
+                                                resetZoom();
+                                                return;
+                                            }
+                                            const start = Math.max(0, Math.min(startIndex, endIndex));
+                                            const end = Math.min(n - 1, Math.max(startIndex, endIndex));
+                                            const left = distribution[start]?.range;
+                                            const right = distribution[end]?.range;
+                                            if (!left || !right) return;
+                                            setHistZoomById(prev => ({ ...prev, [def.id]: { min: left.min, max: right.max } }));
+                                        }}
                                     />
                                 </BarChart>
                             </ResponsiveContainer>
@@ -299,17 +436,10 @@ export const DynamicChartGrid: React.FC<{
             if (!yCol || kindByColumn.get(xCol) !== 'numeric' || kindByColumn.get(yCol) !== 'numeric') {
                 return { content: <EmptyChartState theme={theme} message="Нужны два числовых столбца" />, hasData: false };
             }
-            const raw = data
-                .map(d => {
-                    const x = d[xCol];
-                    const y = d[yCol];
-                    if (!isFiniteNumber(x) || !isFiniteNumber(y)) return null;
-                    return { x, y };
-                })
-                .filter(Boolean) as Array<{ x: number; y: number }>;
+            const raw = scatterRawByChartId.get(def.id) ?? [];
             const scatterData = sampleArray(raw, MAX_SCATTER_POINTS);
             const analysis = raw.length
-                ? `Точек в выборке: ${raw.length}. На графике — до ${MAX_SCATTER_POINTS} точек (равномерная подвыборка). Оси по основной массе значений; масштаб и сдвиг — см. подсказки над графиком.`
+                ? `Точек в выборке: ${raw.length}. На графике — до ${MAX_SCATTER_POINTS} точек (равномерная подвыборка). Оси подстроены под основную массу значений.`
                 : undefined;
             return {
                 hasData: scatterData.length > 0,
@@ -325,7 +455,6 @@ export const DynamicChartGrid: React.FC<{
                         axisTextColor={axisTextColor}
                         scatterGridColor={scatterGridColor}
                         tooltipStyle={tooltipStyle}
-                        tooltipCursor={tooltipCursor}
                     />
                 ),
             };
@@ -335,69 +464,148 @@ export const DynamicChartGrid: React.FC<{
         if (kindByColumn.get(col) !== 'categorical') {
             return { content: <EmptyChartState theme={theme} message={`Столбец «${col}» не категориальный (по авто-оценке)`} />, hasData: false };
         }
-        const counts: Record<string, number> = {};
-        for (const row of data) {
-            const v = row[col];
-            const key = v === '' || v == null ? '(пусто)' : String(v);
-            counts[key] = (counts[key] || 0) + 1;
-        }
-        const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-        let barData: { name: string; count: number }[];
+        const entries = categoryEntriesByColumn.get(col) ?? [];
+        let barData: Array<{ rawName: string; axisLabel: string; fullLabel: string; count: number }>;
         if (entries.length > CATEGORY_DISPLAY_LIMIT) {
             const head = entries.slice(0, CATEGORY_DISPLAY_LIMIT - 1);
             const tail = entries.slice(CATEGORY_DISPLAY_LIMIT - 1);
-            const otherCount = tail.reduce((s, [, n]) => s + n, 0);
+            const otherCount = tail.reduce((s, item) => s + item.count, 0);
             barData = [
-                ...head.map(([name, count]) => ({ name: name.length > 40 ? `${name.slice(0, 37)}…` : name, count })),
-                { name: `+ ещё ${tail.length} знач.`, count: otherCount },
+                ...head.map(item => {
+                    return {
+                        rawName: item.canonical,
+                        axisLabel: truncateDisplayLabel(item.fullLabel, 36),
+                        fullLabel: item.fullLabel,
+                        count: item.count,
+                    };
+                }),
+                {
+                    rawName: '__other_categories__',
+                    axisLabel: `+ ещё ${tail.length} знач.`,
+                    fullLabel: `+ ещё ${tail.length} знач.`,
+                    count: otherCount,
+                },
             ];
         } else {
-            barData = entries.map(([name, count]) => ({ name: name.length > 40 ? `${name.slice(0, 37)}…` : name, count }));
+            barData = entries.map(item => {
+                return {
+                    rawName: item.canonical,
+                    axisLabel: truncateDisplayLabel(item.fullLabel, 36),
+                    fullLabel: item.fullLabel,
+                    count: item.count,
+                };
+            });
         }
+        const axisLabelByRaw = new Map(barData.map(item => [item.rawName, item.axisLabel]));
         const totalRows = data.length;
-        const analysis = `Категорий: ${entries.length}. Чаще всего: ${entries[0]?.[0] ?? '—'}. Ползунок внизу — выбор подмножества категорий на экране.`;
-        const brushFillCat = theme === 'dark' ? '#18181b' : '#fafafa';
+        const topCategory = entries[0]?.fullLabel ?? '—';
+        const analysis = `Категорий: ${entries.length}. Чаще всего: ${topCategory}.`;
+        const categoryWindow = categoryBrushById[def.id];
+        const maxIndex = Math.max(0, barData.length - 1);
+        const startIndex =
+            typeof categoryWindow?.start === 'number' ? Math.max(0, Math.min(maxIndex, categoryWindow.start)) : 0;
+        const endIndex =
+            typeof categoryWindow?.end === 'number'
+                ? Math.max(startIndex, Math.min(maxIndex, categoryWindow.end))
+                : maxIndex;
+        const brushFillCategory = theme === 'dark' ? '#111827' : '#eef2ff';
+        const resetCategoryBrush = () => {
+            setCategoryBrushById(prev => {
+                const next = { ...prev };
+                delete next[def.id];
+                return next;
+            });
+        };
         return {
             hasData: barData.length > 0,
             analysis,
             content: (
-                <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={barData} layout="vertical" margin={{ top: 8, right: 12, left: 4, bottom: 36 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
-                        <XAxis type="number" stroke={axisTextColor} fontSize={11} tickFormatter={formatNumber} tick={{ fill: axisTextColor }} />
-                        <YAxis type="category" dataKey="name" stroke={axisTextColor} fontSize={10} width={118} tick={{ fill: axisTextColor }} />
-                        <Tooltip
-                            cursor={tooltipCursor}
-                            content={({ active, payload }) => {
-                                if (!active || !payload?.length) return null;
-                                const row = payload[0]?.payload as { name?: string; count?: number };
-                                const cnt = row.count ?? 0;
-                                const pctAll = totalRows > 0 ? ((cnt / totalRows) * 100).toFixed(1) : '0';
-                                return (
-                                    <div className="rounded-lg border px-3 py-2 text-xs shadow-lg" style={{ ...tooltipStyle, maxWidth: '18rem' }}>
-                                        <p className="mb-1 font-semibold">Категория</p>
-                                        <p className="mb-2 break-words opacity-95">{row.name}</p>
-                                        <p className="tabular-nums">
-                                            <span className="opacity-75">Строк: </span>
-                                            <span className="font-medium">{formatNumber(cnt)}</span>
-                                            <span className="opacity-75"> ({pctAll}% от выборки)</span>
-                                        </p>
-                                    </div>
-                                );
-                            }}
-                        />
-                        <Bar dataKey="count" fill={chartFillColor} fillOpacity={BAR_OPACITY_INACTIVE + 0.2} radius={[0, 4, 4, 0]} />
-                        <Brush
-                            dataKey="name"
-                            height={28}
-                            stroke={axisTextColor}
-                            fill={brushFillCat}
-                            fillOpacity={0.45}
-                            tickFormatter={(v: string | number) => (typeof v === 'string' && v.length > 14 ? `${v.slice(0, 12)}…` : String(v))}
-                            ariaLabel="Диапазон категорий"
-                        />
-                    </BarChart>
-                </ResponsiveContainer>
+                <div className="relative h-full min-h-[12rem] w-full min-w-0 flex-1">
+                    {barData.length > 1 && categoryWindow && (
+                        <button
+                            type="button"
+                            onClick={resetCategoryBrush}
+                            className={themeClass(theme, {
+                                dark: 'mb-1 shrink-0 self-end rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-800',
+                                light: 'mb-1 shrink-0 self-end rounded-lg border border-zinc-200 px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-100',
+                            })}
+                        >
+                            Весь диапазон
+                        </button>
+                    )}
+                    <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                            data={barData}
+                            layout="vertical"
+                            margin={{ top: 12, right: 20, left: 8, bottom: barData.length > 1 ? 44 : 22 }}
+                        >
+                            <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+                            <XAxis
+                                type="number"
+                                stroke={axisTextColor}
+                                fontSize={11}
+                                tickFormatter={formatNumber}
+                                tick={{ fill: axisTextColor }}
+                                interval="preserveStartEnd"
+                                tickMargin={8}
+                            />
+                            <YAxis
+                                type="category"
+                                dataKey="rawName"
+                                stroke={axisTextColor}
+                                fontSize={10}
+                                width={136}
+                                tick={{ fill: axisTextColor }}
+                                tickFormatter={(v: string | number) => axisLabelByRaw.get(String(v)) ?? String(v)}
+                            />
+                            <Tooltip
+                                cursor={tooltipCursor}
+                                content={({ active, payload }) => {
+                                    if (!active || !payload?.length) return null;
+                                    const row = payload[0]?.payload as { fullLabel?: string; count?: number };
+                                    const cnt = row.count ?? 0;
+                                    const pctAll = totalRows > 0 ? ((cnt / totalRows) * 100).toFixed(1) : '0';
+                                    return (
+                                        <div className="rounded-lg border px-3 py-2 text-xs shadow-lg" style={{ ...tooltipStyle, maxWidth: '18rem' }}>
+                                            <p className="mb-1 font-semibold">Категория</p>
+                                            <p className="mb-2 break-words opacity-95">{row.fullLabel ?? '—'}</p>
+                                            <p className="tabular-nums">
+                                                <span className="opacity-75">Строк: </span>
+                                                <span className="font-medium">{formatNumber(cnt)}</span>
+                                                <span className="opacity-75"> ({pctAll}% от выборки)</span>
+                                            </p>
+                                        </div>
+                                    );
+                                }}
+                            />
+                            <Bar dataKey="count" fill={chartFillColor} fillOpacity={BAR_OPACITY_INACTIVE + 0.2} radius={[0, 4, 4, 0]} />
+                            {barData.length > 1 && (
+                                <Brush
+                                    dataKey="rawName"
+                                    height={26}
+                                    stroke={theme === 'dark' ? '#818cf8' : '#6366f1'}
+                                    fill={brushFillCategory}
+                                    fillOpacity={0.62}
+                                    travellerWidth={10}
+                                    tickFormatter={() => ''}
+                                    startIndex={startIndex}
+                                    endIndex={endIndex}
+                                    onChange={({ startIndex: nextStart, endIndex: nextEnd }) => {
+                                        if (typeof nextStart !== 'number' || typeof nextEnd !== 'number') return;
+                                        const start = Math.max(0, Math.min(nextStart, nextEnd));
+                                        const end = Math.max(start, Math.max(nextStart, nextEnd));
+                                        if (start === 0 && end >= maxIndex) {
+                                            resetCategoryBrush();
+                                            return;
+                                        }
+                                        setCategoryBrushById(prev => ({ ...prev, [def.id]: { start, end } }));
+                                    }}
+                                    ariaLabel="Диапазон категорий"
+                                />
+                            )}
+                        </BarChart>
+                    </ResponsiveContainer>
+                </div>
             ),
         };
     };
@@ -418,27 +626,37 @@ export const DynamicChartGrid: React.FC<{
     }
 
     const expandedRendered = expanded ? renderChart(expanded) : null;
+    const displayChartTitle = (def: UserChartDefinition): string => {
+        if (def.type !== 'categoryBars') return def.title;
+        if (def.title.startsWith('По категориям:')) {
+            const suffix = def.title.slice('По категориям:'.length).trim();
+            return `По категориям: ${formatColumnLabel(suffix || def.column)}`;
+        }
+        return `По категориям: ${formatColumnLabel(def.column)}`;
+    };
 
     return (
         <>
-            <div className="grid auto-rows-[minmax(340px,auto)] grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+            <div className="grid auto-rows-[minmax(340px,auto)] grid-cols-1 gap-4 sm:grid-cols-[repeat(auto-fit,minmax(min(100%,17.5rem),1fr))] sm:gap-5">
                 {charts.map(def => {
                     const { content, analysis, hasData } = renderChart(def);
                     return (
                         <ChartCard
                             key={def.id}
-                            title={def.title}
+                            title={displayChartTitle(def)}
                             theme={theme}
-                            exportFilenameSlug={def.title}
                             onExpand={() => setExpanded(def)}
                             footer={
                                 analysis && hasData ? (
-                                    <div className={themeClass(theme, {
-                                        dark: 'mt-5 text-sm leading-relaxed text-zinc-400',
-                                        light: 'mt-5 text-sm leading-relaxed text-zinc-600',
-                                    })}>
+                                    <p
+                                        title={analysis}
+                                        className={themeClass(theme, {
+                                            dark: 'min-w-0 line-clamp-2 text-xs leading-snug text-zinc-400 sm:line-clamp-3 lg:line-clamp-4',
+                                            light: 'min-w-0 line-clamp-2 text-xs leading-snug text-zinc-600 sm:line-clamp-3 lg:line-clamp-4',
+                                        })}
+                                    >
                                         {analysis}
-                                    </div>
+                                    </p>
                                 ) : null
                             }
                         >
@@ -451,8 +669,8 @@ export const DynamicChartGrid: React.FC<{
             {expanded && expandedRendered && (
                 <div
                     className={themeClass(theme, {
-                        dark: 'fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm sm:p-8',
-                        light: 'fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/25 p-4 backdrop-blur-sm sm:p-8',
+                        dark: 'fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-3 backdrop-blur-sm sm:p-6',
+                        light: 'fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/25 p-3 backdrop-blur-sm sm:p-6',
                     })}
                     role="presentation"
                     onClick={() => setExpanded(null)}
@@ -462,24 +680,24 @@ export const DynamicChartGrid: React.FC<{
                         aria-modal="true"
                         aria-labelledby="chart-expand-title"
                         className={themeClass(theme, {
-                            dark: 'flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-[1.75rem] border border-zinc-800 bg-zinc-950 shadow-[0_24px_64px_-12px_rgba(0,0,0,0.55)]',
-                            light: 'flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-[1.75rem] border border-zinc-200/95 bg-white shadow-[0_24px_64px_-16px_rgba(0,0,0,0.12)]',
+                            dark: 'flex h-[min(92vh,900px)] max-h-[100dvh] w-full max-w-6xl flex-col overflow-hidden rounded-[1.75rem] border border-zinc-800 bg-zinc-950 shadow-[0_24px_64px_-12px_rgba(0,0,0,0.55)]',
+                            light: 'flex h-[min(92vh,900px)] max-h-[100dvh] w-full max-w-6xl flex-col overflow-hidden rounded-[1.75rem] border border-zinc-200/95 bg-white shadow-[0_24px_64px_-16px_rgba(0,0,0,0.12)]',
                         })}
                         onClick={e => e.stopPropagation()}
                     >
                         <div
                             className={`no-export ${themeClass(theme, {
-                                dark: 'flex items-center justify-between gap-3 border-b border-zinc-800 px-5 py-4 sm:px-6',
-                                light: 'flex items-center justify-between gap-3 border-b border-zinc-200 px-5 py-4 sm:px-6',
+                                dark: 'flex min-w-0 shrink-0 items-center justify-between gap-3 border-b border-zinc-800 px-4 py-3 sm:px-6 sm:py-4',
+                                light: 'flex min-w-0 shrink-0 items-center justify-between gap-3 border-b border-zinc-200 px-4 py-3 sm:px-6 sm:py-4',
                             })}`}
                         >
-                            <h2 id="chart-expand-title" className={`font-display text-base font-semibold sm:text-lg ${themeClass(theme, {
+                            <h2 id="chart-expand-title" className={`min-w-0 flex-1 pr-2 font-display text-base font-semibold sm:text-lg ${themeClass(theme, {
                                 dark: 'text-zinc-50',
                                 light: 'text-zinc-900',
                             })}`}>
-                                {expanded.title}
+                                {displayChartTitle(expanded)}
                             </h2>
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex shrink-0 items-center gap-1.5">
                                 <button
                                     type="button"
                                     disabled={expandedExportBusy}
@@ -515,24 +733,41 @@ export const DynamicChartGrid: React.FC<{
                                 </button>
                             </div>
                         </div>
-                        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-5 sm:p-7">
+
+                        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-0 overflow-y-auto px-4 pb-4 pt-3 sm:px-6 sm:pb-5 sm:pt-4">
+                            {expandedRendered.analysis && expandedRendered.hasData && (
+                                <div
+                                    className={`sticky top-0 z-10 shrink-0 border-b pb-3 ${themeClass(theme, {
+                                        dark: 'border-zinc-800/90 bg-zinc-950/95', light: 'border-zinc-200/90 bg-white/95',
+                                    })}`}
+                                >
+                                    <p
+                                        className={themeClass(theme, {
+                                            dark: 'mb-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-500',
+                                            light: 'mb-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-500',
+                                        })}
+                                    >
+                                        Анализ
+                                    </p>
+                                    <p
+                                        className={themeClass(theme, {
+                                            dark: 'text-sm leading-relaxed text-zinc-400',
+                                            light: 'text-sm leading-relaxed text-zinc-600',
+                                        })}
+                                    >
+                                        {expandedRendered.analysis}
+                                    </p>
+                                </div>
+                            )}
                             <div
                                 ref={expandedExportRef}
-                                className={`h-[min(82vh,900px)] min-h-[380px] w-full shrink-0 ${themeClass(theme, {
-                                    dark: 'rounded-2xl bg-zinc-950/40 p-3',
-                                    light: 'rounded-2xl bg-zinc-50/80 p-3',
+                                className={`mt-3 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl ${themeClass(theme, {
+                                    dark: 'bg-zinc-950/40 p-3',
+                                    light: 'bg-zinc-50/80 p-3',
                                 })}`}
                             >
-                                {expandedRendered.content}
+                                <div className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col">{expandedRendered.content}</div>
                             </div>
-                            {expandedRendered.analysis && expandedRendered.hasData && (
-                                <p className={themeClass(theme, {
-                                    dark: 'text-sm leading-relaxed text-zinc-400',
-                                    light: 'text-sm leading-relaxed text-zinc-600',
-                                })}>
-                                    {expandedRendered.analysis}
-                                </p>
-                            )}
                         </div>
                     </div>
                 </div>
