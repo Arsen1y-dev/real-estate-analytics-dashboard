@@ -25,6 +25,8 @@ export const ColumnSearchSelect: React.FC<{
     emptyText?: string;
     /** Быстрый доступ (сверху списка): только столбцы из `options` */
     quickPicks?: ColumnQuickPick[];
+    /** Формат отображаемого названия опции (сырой ключ не меняется) */
+    renderOptionLabel?: (name: string) => string;
 }> = ({
     id,
     label,
@@ -36,8 +38,10 @@ export const ColumnSearchSelect: React.FC<{
     searchPlaceholder = 'Поиск по названию…',
     emptyText = 'Нет совпадений',
     quickPicks = [],
+    renderOptionLabel,
 }) => {
     const [query, setQuery] = useState('');
+    const toDisplayLabel = (name: string) => renderOptionLabel?.(name) ?? name;
 
     const visibleQuickPicks = useMemo(() => {
         const q = query.trim().toLowerCase();
@@ -50,12 +54,17 @@ export const ColumnSearchSelect: React.FC<{
 
     const filtered = useMemo(() => {
         const q = query.trim().toLowerCase();
-        const list = !q ? [...options] : options.filter(o => o.toLowerCase().includes(q));
+        const list = !q
+            ? [...options]
+            : options.filter(o => {
+                  const display = toDisplayLabel(o).toLowerCase();
+                  return o.toLowerCase().includes(q) || display.includes(q);
+              });
         if (value && options.includes(value) && !list.includes(value)) {
             return [value, ...list];
         }
         return list;
-    }, [options, query, value]);
+    }, [options, query, value, renderOptionLabel]);
 
     const mainList = useMemo(() => {
         if (visibleQuickPicks.length === 0) return filtered;
@@ -143,11 +152,7 @@ export const ColumnSearchSelect: React.FC<{
                         </div>
                     </div>
                 )}
-                <ul
-                    role="listbox"
-                    aria-label={label}
-                    className="max-h-40 overflow-y-auto overscroll-contain p-1"
-                >
+                <ul role="listbox" aria-label={label} className="p-1">
                     {filtered.length === 0 && visibleQuickPicks.length === 0 ? (
                         <li
                             className={themeClass(theme, {
@@ -192,7 +197,7 @@ export const ColumnSearchSelect: React.FC<{
                                                   })
                                         } disabled:cursor-not-allowed disabled:opacity-45`}
                                     >
-                                        <span className="break-words">{highlightSearchMatches(name, query, markCls)}</span>
+                                        <span className="break-words">{highlightSearchMatches(toDisplayLabel(name), query, markCls)}</span>
                                     </button>
                                 </li>
                             );

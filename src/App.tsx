@@ -215,7 +215,7 @@ function App() {
                                 Загрузите CSV и соберите графики из любых столбцов: гистограммы, точечные диаграммы и распределение по категориям.
                             </p>
                         </div>
-                        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2.5 sm:gap-3">
+                        <div className="grid w-full shrink-0 grid-cols-1 gap-2.5 sm:w-auto sm:grid-cols-2 sm:justify-items-end sm:gap-3 lg:grid-cols-4">
                             <input
                                 ref={replaceFileInputRef}
                                 type="file"
@@ -228,11 +228,11 @@ function App() {
                                 type="button"
                                 onClick={handleShare}
                                 className={themeClass(theme, {
-                                    dark: 'inline-flex items-center gap-2 rounded-xl border border-indigo-500/35 bg-indigo-500/[0.12] px-4 py-2.5 text-sm font-medium text-indigo-100 transition hover:border-indigo-400/45 hover:bg-indigo-500/[0.18]',
-                                    light: 'inline-flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50/90 px-4 py-2.5 text-sm font-medium text-indigo-900 shadow-sm transition hover:border-indigo-300 hover:bg-indigo-50',
+                                    dark: 'inline-flex h-11 w-full min-w-[13.25rem] items-center justify-center gap-2 rounded-xl border border-indigo-500/35 bg-indigo-500/[0.12] px-4 text-sm font-medium text-indigo-100 transition hover:border-indigo-400/45 hover:bg-indigo-500/[0.18]',
+                                    light: 'inline-flex h-11 w-full min-w-[13.25rem] items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50/90 px-4 text-sm font-medium text-indigo-900 shadow-sm transition hover:border-indigo-300 hover:bg-indigo-50',
                                 })}
                             >
-                                <svg className="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
+                                <svg className="h-[18px] w-[18px] shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
                                 </svg>
                                 Поделиться
@@ -241,8 +241,8 @@ function App() {
                                 type="button"
                                 onClick={() => replaceFileInputRef.current?.click()}
                                 className={themeClass(theme, {
-                                    dark: 'inline-flex items-center gap-2 rounded-xl border border-zinc-700/90 bg-zinc-900/80 px-4 py-2.5 text-sm font-medium text-zinc-200 transition hover:border-zinc-600 hover:bg-zinc-900',
-                                    light: 'inline-flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-sm font-medium text-zinc-800 shadow-sm transition hover:border-zinc-300 hover:bg-zinc-50',
+                                    dark: 'inline-flex h-11 w-full min-w-[13.25rem] items-center justify-center gap-2 rounded-xl border border-zinc-700/90 bg-zinc-900/80 px-4 text-sm font-medium text-zinc-200 transition hover:border-zinc-600 hover:bg-zinc-900',
+                                    light: 'inline-flex h-11 w-full min-w-[13.25rem] items-center justify-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 text-sm font-medium text-zinc-800 shadow-sm transition hover:border-zinc-300 hover:bg-zinc-50',
                                 })}
                             >
                                 Загрузить другой CSV
@@ -251,26 +251,29 @@ function App() {
                                 type="button"
                                 onClick={toggleTheme}
                                 className={themeClass(theme, {
-                                    dark: 'inline-flex items-center gap-2 rounded-xl border border-zinc-700/80 bg-zinc-900/80 px-4 py-2.5 text-sm font-medium text-zinc-200 transition hover:border-zinc-600 hover:bg-zinc-900',
-                                    light: 'inline-flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 shadow-sm transition hover:border-zinc-300 hover:bg-zinc-50',
+                                    dark: 'inline-flex h-11 w-full min-w-[13.25rem] items-center justify-center gap-2 rounded-xl border border-zinc-700/80 bg-zinc-900/80 px-4 text-sm font-medium text-zinc-200 transition hover:border-zinc-600 hover:bg-zinc-900',
+                                    light: 'inline-flex h-11 w-full min-w-[13.25rem] items-center justify-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 text-sm font-medium text-zinc-700 shadow-sm transition hover:border-zinc-300 hover:bg-zinc-50',
                                 })}
                                 aria-label="Переключить тему"
                             >
                                 {theme === 'dark' ? (
                                     <>
-                                        <svg className="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24"><path d="M21.64 13a1 1 0 0 0-1.05-.14 8.05 8.05 0 0 1-3.37.73 8.15 8.15 0 0 1-8.11-8.11 8 8 0 0 1 .25-2A1 1 0 0 0 8.36 2 10.14 10.14 0 1 0 22 14.64 1 1 0 0 0 21.64 13Z"/></svg>
+                                        <svg className="h-[18px] w-[18px] shrink-0" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24"><path d="M21.64 13a1 1 0 0 0-1.05-.14 8.05 8.05 0 0 1-3.37.73 8.15 8.15 0 0 1-8.11-8.11 8 8 0 0 1 .25-2A1 1 0 0 0 8.36 2 10.14 10.14 0 1 0 22 14.64 1 1 0 0 0 21.64 13Z"/></svg>
                                         Тёмная тема
                                     </>
                                 ) : (
                                     <>
-                                        <svg className="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24"><path d="M6.76 4.84 5.35 3.43 3.93 4.84l1.41 1.41ZM1 11h3v2H1zm10-9h2v3h-2zm9.07 1.43-1.41 1.41 1.41 1.41 1.41-1.41ZM17.24 4.84 15.83 6.25l1.41 1.41L18.65 6.25ZM12 5a7 7 0 1 0 7 7 7 7 0 0 0-7-7Zm6 8h3v-2h-3ZM4.22 17.66l-1.41 1.41 1.41 1.41 1.41-1.41Zm15.56 0-1.41 1.41 1.41 1.41 1.41-1.41ZM11 19h2v3h-2ZM6.76 19.16l-1.41 1.41 1.41 1.41 1.41-1.41Z"/></svg>
+                                        <svg className="h-[18px] w-[18px] shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.9} aria-hidden>
+                                            <circle cx="12" cy="12" r="4" />
+                                            <path strokeLinecap="round" d="M12 3v2.2M12 18.8V21M3 12h2.2M18.8 12H21M5.64 5.64l1.56 1.56M16.8 16.8l1.56 1.56M18.36 5.64 16.8 7.2M7.2 16.8l-1.56 1.56" />
+                                        </svg>
                                         Светлая тема
                                     </>
                                 )}
                             </button>
                             <div className={themeClass(theme, {
-                                dark: 'inline-flex items-center gap-2 rounded-lg border border-indigo-500/25 bg-indigo-500/[0.08] px-3 py-1.5 text-xs font-medium text-indigo-200/95',
-                                light: 'inline-flex items-center gap-2 rounded-lg border border-indigo-200/80 bg-indigo-50/90 px-3 py-1.5 text-xs font-medium text-indigo-800',
+                                dark: 'inline-flex h-11 w-full min-w-[13.25rem] items-center justify-center rounded-xl border border-indigo-500/25 bg-indigo-500/[0.08] px-3 text-sm font-medium text-indigo-200/95',
+                                light: 'inline-flex h-11 w-full min-w-[13.25rem] items-center justify-center rounded-xl border border-indigo-200/80 bg-indigo-50/90 px-3 text-sm font-medium text-indigo-800',
                             })}>
                                 Произвольные столбцы CSV
                             </div>

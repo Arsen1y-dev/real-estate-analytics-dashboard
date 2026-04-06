@@ -2,6 +2,8 @@ import type { DataRow, DataSummary } from '@/types';
 
 const STORAGE_KEY = 'realty-dashboard-dataset-v2';
 const MAX_CACHE_CHARS = 4_500_000;
+let memoryCachedDataset: CachedDataset | null = null;
+let memoryCacheLoaded = false;
 
 export interface CachedDataset {
     version: 2;
@@ -15,20 +17,31 @@ export function makeFileKey(file: File): string {
 }
 
 export function loadCachedDataset(): CachedDataset | null {
+    if (memoryCacheLoaded) return memoryCachedDataset;
     try {
         const raw = localStorage.getItem(STORAGE_KEY);
         if (!raw || raw.length > MAX_CACHE_CHARS) {
+            memoryCacheLoaded = true;
+            memoryCachedDataset = null;
             return null;
         }
         const parsed = JSON.parse(raw) as CachedDataset;
         if (parsed?.version !== 2 || !Array.isArray(parsed.data) || !parsed.summary || typeof parsed.fileKey !== 'string') {
+            memoryCacheLoaded = true;
+            memoryCachedDataset = null;
             return null;
         }
         if (!Array.isArray(parsed.summary.columnOrder) || !Array.isArray(parsed.summary.columns)) {
+            memoryCacheLoaded = true;
+            memoryCachedDataset = null;
             return null;
         }
+        memoryCacheLoaded = true;
+        memoryCachedDataset = parsed;
         return parsed;
     } catch {
+        memoryCacheLoaded = true;
+        memoryCachedDataset = null;
         return null;
     }
 }
@@ -56,17 +69,30 @@ export function saveCachedDataset(file: File, data: DataRow[], summary: DataSumm
             console.warn(
                 '[realty-dashboard] Датасет слишком большой для localStorage, кэш не сохранён. Аналитика работает в памяти сессии.'
             );
+            memoryCacheLoaded = true;
+            memoryCachedDataset = payload;
             return;
         }
         localStorage.setItem(STORAGE_KEY, serialized);
+        memoryCacheLoaded = true;
+        memoryCachedDataset = payload;
     } catch (e) {
         console.warn('[realty-dashboard] Не удалось записать кэш в localStorage:', e);
+        memoryCacheLoaded = true;
+        memoryCachedDataset = {
+            version: 2,
+            fileKey: makeFileKey(file),
+            data,
+            summary,
+        };
     }
 }
 
 export function clearCachedDataset(): void {
     try {
         localStorage.removeItem(STORAGE_KEY);
+        memoryCacheLoaded = true;
+        memoryCachedDataset = null;
     } catch {
         /* ignore */
     }

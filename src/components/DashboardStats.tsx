@@ -19,6 +19,10 @@ import { generateMarketInsights } from '@/domain/insights';
 
 const MAX_STAT_CARDS = 7;
 
+/** Подзаголовок секции KPI: один раз, чтобы не расходиться в пустом и заполненном состоянии. */
+const KPI_SECTION_LEAD =
+    'Показатели пересчитываются по текущей выборке. Главный KPI выделен крупной карточкой, остальные — для сравнения и контекста.';
+
 function columnExcludedFromExtraMedian(name: string): boolean {
     const l = name.toLowerCase();
     if (l.includes('срок') && (l.includes('сдач') || l.includes('сдачи'))) return true;
@@ -90,7 +94,8 @@ function isMarketHeroKey(k: StatGradientKey): boolean {
 
 function KpiStatCard({ item, theme, variant }: KpiCardProps) {
     const showDelta = item.deltaPct != null && Number.isFinite(item.deltaPct);
-    const smallDelta = showDelta && Math.abs(item.deltaPct!) < 0.05;
+    /** Разница с полным файлом меньше 0,1 п.п. — показываем текст вместо «≈ 0%». */
+    const smallDelta = showDelta && Math.abs(item.deltaPct!) < 0.1;
     const isHero = variant === 'hero';
     const sparkSize: MetricSparklineSize = isHero ? 'hero' : 'default';
     const showHeroBadge = isHero && isMarketHeroKey(item.gradientKey);
@@ -151,39 +156,47 @@ function KpiStatCard({ item, theme, variant }: KpiCardProps) {
                     <p className={`${valueCls} leading-[1.1]`}>{item.display}</p>
                     {showDelta && (
                         <div className={`flex flex-wrap items-center gap-2 ${isHero ? 'pt-1.5' : 'pt-0.5'}`}>
-                            <span
-                                className={`inline-flex items-center gap-1 rounded-md tabular-nums ${
-                                    isHero ? 'px-2.5 py-1 text-xs font-semibold' : 'px-2 py-0.5 text-[11px] font-semibold'
-                                } ${
-                                    smallDelta
-                                        ? themeClass(theme, {
-                                              dark: 'bg-zinc-800/90 text-zinc-400',
-                                              light: 'bg-zinc-100 text-zinc-500',
-                                          })
-                                        : item.deltaPct! > 0
-                                          ? themeClass(theme, {
-                                                dark: 'bg-indigo-500/15 text-indigo-200',
-                                                light: 'bg-indigo-50 text-indigo-800',
-                                            })
-                                          : themeClass(theme, {
-                                                dark: 'bg-zinc-800/80 text-zinc-400',
-                                                light: 'bg-zinc-100 text-zinc-600',
-                                            })
-                                }`}
-                            >
-                                {!smallDelta && <span aria-hidden>{item.deltaPct! > 0 ? '↑' : '↓'}</span>}
-                                {smallDelta
-                                    ? '≈ 0%'
-                                    : `${item.deltaPct! > 0 ? '+' : '−'}${formatPercentDelta(item.deltaPct!)}%`}
-                            </span>
-                            <span
-                                className={themeClass(theme, {
-                                    dark: `font-medium text-zinc-500 ${isHero ? 'text-[11px]' : 'text-[10px]'}`,
-                                    light: `font-medium text-zinc-500 ${isHero ? 'text-[11px]' : 'text-[10px]'}`,
-                                })}
-                            >
-                                к полному файлу
-                            </span>
+                            {smallDelta ? (
+                                <span
+                                    className={`inline-flex rounded-md ${
+                                        isHero ? 'px-2.5 py-1 text-xs font-medium' : 'px-2 py-0.5 text-[11px] font-medium'
+                                    } ${themeClass(theme, {
+                                        dark: 'bg-zinc-800/90 text-zinc-400',
+                                        light: 'bg-zinc-100 text-zinc-600',
+                                    })}`}
+                                >
+                                    Без заметного отличия от полного файла
+                                </span>
+                            ) : (
+                                <>
+                                    <span
+                                        className={`inline-flex items-center gap-1 rounded-md tabular-nums ${
+                                            isHero ? 'px-2.5 py-1 text-xs font-semibold' : 'px-2 py-0.5 text-[11px] font-semibold'
+                                        } ${
+                                            item.deltaPct! > 0
+                                                ? themeClass(theme, {
+                                                      dark: 'bg-indigo-500/15 text-indigo-200',
+                                                      light: 'bg-indigo-50 text-indigo-800',
+                                                  })
+                                                : themeClass(theme, {
+                                                      dark: 'bg-zinc-800/80 text-zinc-400',
+                                                      light: 'bg-zinc-100 text-zinc-600',
+                                                  })
+                                        }`}
+                                    >
+                                        <span aria-hidden>{item.deltaPct! > 0 ? '↑' : '↓'}</span>
+                                        {`${item.deltaPct! > 0 ? '+' : '−'}${formatPercentDelta(item.deltaPct!)}%`}
+                                    </span>
+                                    <span
+                                        className={themeClass(theme, {
+                                            dark: `font-medium text-zinc-500 ${isHero ? 'text-[11px]' : 'text-[10px]'}`,
+                                            light: `font-medium text-zinc-500 ${isHero ? 'text-[11px]' : 'text-[10px]'}`,
+                                        })}
+                                    >
+                                        к полному файлу
+                                    </span>
+                                </>
+                            )}
                         </div>
                     )}
                 </div>
@@ -356,7 +369,7 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({ data, baselineDa
                             light: 'mt-2 max-w-2xl text-sm leading-relaxed text-zinc-600',
                         })}
                     >
-                        Ключевые показатели по текущей выборке и сравнение с полным файлом после фильтрации.
+                        {KPI_SECTION_LEAD}
                     </p>
                 </header>
                 <div
@@ -393,8 +406,7 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({ data, baselineDa
                         light: 'mt-2 max-w-2xl text-sm leading-relaxed text-zinc-600',
                     })}
                 >
-                    Ключевые показатели по текущей выборке. Главный показатель выделен; остальные метрики — для
-                    контекста.
+                    {KPI_SECTION_LEAD}
                 </p>
                 {insights.length > 0 && (
                     <div
@@ -449,7 +461,9 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({ data, baselineDa
                 {secondaryItems.length > 0 && (
                     <div className="grid min-w-0 flex-1 grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 xl:grid-cols-2">
                         {secondaryItems.map((item, idx) => (
-                            <KpiStatCard key={`${item.label}-${idx}`} item={item} theme={theme} variant="secondary" />
+                            <React.Fragment key={`${item.label}-${idx}`}>
+                                <KpiStatCard item={item} theme={theme} variant="secondary" />
+                            </React.Fragment>
                         ))}
                     </div>
                 )}

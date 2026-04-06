@@ -1,4 +1,4 @@
-import { UI_SETTINGS_KEY } from '@/persistence/keys';
+import { THEME_PREF_KEY, UI_SETTINGS_KEY } from '@/persistence/keys';
 
 export type Theme = 'dark' | 'light';
 
@@ -6,6 +6,8 @@ export type Theme = 'dark' | 'light';
 export function readPreferredTheme(): Theme {
     if (typeof window === 'undefined') return 'light';
     try {
+        const fastTheme = localStorage.getItem(THEME_PREF_KEY);
+        if (fastTheme === 'dark' || fastTheme === 'light') return fastTheme;
         const raw = localStorage.getItem(UI_SETTINGS_KEY);
         if (raw) {
             const p = JSON.parse(raw) as { theme?: string };

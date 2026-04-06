@@ -76,8 +76,8 @@ export const FilterPanel: React.FC<{
     });
 
     const shell = themeClass(theme, {
-        dark: 'flex h-full max-h-[min(100vh-10rem,56rem)] flex-col overflow-y-auto rounded-3xl border border-zinc-800/85 bg-zinc-950/75 shadow-[0_1px_3px_rgba(0,0,0,0.2),0_16px_40px_-12px_rgba(0,0,0,0.35)] backdrop-blur-md lg:max-h-[calc(100vh-8rem)]',
-        light: 'flex h-full max-h-[min(100vh-10rem,56rem)] flex-col overflow-y-auto rounded-3xl border border-zinc-200/95 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04),0_16px_48px_-16px_rgba(0,0,0,0.07)] backdrop-blur-md lg:max-h-[calc(100vh-8rem)]',
+        dark: 'flex h-full min-w-0 max-h-[min(100vh-10rem,56rem)] flex-col overflow-x-hidden overflow-y-auto rounded-3xl border border-zinc-800/85 bg-zinc-950/75 shadow-[0_1px_3px_rgba(0,0,0,0.2),0_16px_40px_-12px_rgba(0,0,0,0.35)] backdrop-blur-md lg:max-h-[calc(100vh-8rem)]',
+        light: 'flex h-full min-w-0 max-h-[min(100vh-10rem,56rem)] flex-col overflow-x-hidden overflow-y-auto rounded-3xl border border-zinc-200/95 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04),0_16px_48px_-16px_rgba(0,0,0,0.07)] backdrop-blur-md lg:max-h-[calc(100vh-8rem)]',
     });
 
     const innerPad = 'px-5 pb-6 pt-6 sm:px-6 sm:pb-7 sm:pt-7';
@@ -137,11 +137,11 @@ export const FilterPanel: React.FC<{
                     )}
                 </div>
 
-                <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="mt-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div
                         className={themeClass(theme, {
-                            dark: 'inline-flex w-fit items-baseline gap-2 rounded-xl bg-zinc-900/85 px-3.5 py-2.5 ring-1 ring-zinc-800/90',
-                            light: 'inline-flex w-fit items-baseline gap-2 rounded-xl bg-zinc-50 px-3.5 py-2.5 ring-1 ring-zinc-200/90',
+                            dark: 'inline-flex min-w-0 max-w-full flex-wrap items-baseline gap-x-2 gap-y-1 rounded-xl bg-zinc-900/85 px-3.5 py-2.5 ring-1 ring-zinc-800/90',
+                            light: 'inline-flex min-w-0 max-w-full flex-wrap items-baseline gap-x-2 gap-y-1 rounded-xl bg-zinc-50 px-3.5 py-2.5 ring-1 ring-zinc-200/90',
                         })}
                         role="status"
                         aria-live="polite"
@@ -167,7 +167,7 @@ export const FilterPanel: React.FC<{
                         type="button"
                         onClick={resetAllFilters}
                         disabled={!filtersDirty}
-                        className={`shrink-0 rounded-lg px-3 py-2 text-sm font-medium transition ${
+                        className={`w-full shrink-0 rounded-lg px-3 py-2 text-center text-sm font-medium transition sm:w-auto sm:text-left ${
                             filtersDirty
                                 ? themeClass(theme, {
                                       dark: 'border border-zinc-700 bg-zinc-900/90 text-zinc-200 hover:border-zinc-600 hover:bg-zinc-900',
@@ -287,11 +287,11 @@ export const FilterPanel: React.FC<{
                                 {roomsCol}
                             </p>
                         </div>
-                        <div className="flex flex-wrap gap-2">
+                        <div className="grid grid-cols-5 gap-2">
                             <button
                                 type="button"
                                 onClick={clearRooms}
-                                className={`${chipBase} ${
+                                className={`col-span-full ${chipBase} ${
                                     filters.rooms.length === 0 ? `${roomChipOn} ring-1 ring-indigo-500/20` : roomChipMuted
                                 }`}
                             >
@@ -311,7 +311,7 @@ export const FilterPanel: React.FC<{
                                         key={room}
                                         type="button"
                                         onClick={() => handleRoomToggle(room)}
-                                        className={`${chipBase} min-w-[2.75rem] ${cls}`}
+                                        className={`${chipBase} min-w-0 ${cls}`}
                                         aria-pressed={filters.rooms.length === 0 ? false : showOn}
                                     >
                                         {room === 0 ? 'Студия' : `${room}`}

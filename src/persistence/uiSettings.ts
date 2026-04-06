@@ -1,7 +1,7 @@
 import type { Theme } from '@/theme';
 import type { DataSummary, FilterSettings, UserChartDefinition } from '@/types';
 import { columnSignature } from '@/utils/sanitizeDashboardState';
-import { UI_SETTINGS_KEY } from '@/persistence/keys';
+import { THEME_PREF_KEY, UI_SETTINGS_KEY } from '@/persistence/keys';
 
 type V1 = {
     version: 1;
@@ -30,9 +30,7 @@ export function loadUiSettings(): V1 {
 
 export function saveThemePreference(theme: Theme): void {
     try {
-        const s = loadUiSettings();
-        s.theme = theme;
-        localStorage.setItem(UI_SETTINGS_KEY, JSON.stringify(s));
+        localStorage.setItem(THEME_PREF_KEY, theme);
     } catch {
         /* ignore quota / private mode */
     }
