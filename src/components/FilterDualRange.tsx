@@ -44,6 +44,18 @@ export const FilterDualRange: React.FC<Props> = ({
     const degenerate = !Number.isFinite(span) || span <= 0;
     const safeStep = Number.isFinite(step) && step > 0 ? step : 1;
     const inputMax = degenerate ? boundMax : boundMin + Math.ceil((boundMax - boundMin) / safeStep) * safeStep;
+    const maxSnapEpsilon = Math.max(Number.EPSILON, safeStep * 1e-6);
+
+    const fromSliderValue = useCallback((raw: number): number => {
+        const clipped = clamp(raw, boundMin, inputMax);
+        if (clipped >= boundMax - maxSnapEpsilon) return boundMax;
+        return clamp(clipped, boundMin, boundMax);
+    }, [boundMax, boundMin, inputMax, maxSnapEpsilon]);
+
+    const toSliderValue = useCallback((actual: number): number => {
+        if (actual >= boundMax - maxSnapEpsilon) return inputMax;
+        return clamp(actual, boundMin, inputMax);
+    }, [boundMax, boundMin, inputMax, maxSnapEpsilon]);
 
     const low = clamp(valueMin, boundMin, boundMax);
     const high = clamp(valueMax, boundMin, boundMax);
@@ -59,20 +71,20 @@ export const FilterDualRange: React.FC<Props> = ({
 
     const onLowInput = useCallback(
         (raw: number) => {
-            const v = clamp(raw, boundMin, boundMax);
+            const v = fromSliderValue(raw);
             const nextMin = Math.min(v, safeHigh);
             onChange({ min: nextMin, max: safeHigh });
         },
-        [boundMax, boundMin, onChange, safeHigh]
+        [fromSliderValue, onChange, safeHigh]
     );
 
     const onHighInput = useCallback(
         (raw: number) => {
-            const v = clamp(raw, boundMin, boundMax);
+            const v = fromSliderValue(raw);
             const nextMax = Math.max(v, safeLow);
             onChange({ min: safeLow, max: nextMax });
         },
-        [boundMax, boundMin, onChange, safeLow]
+        [fromSliderValue, onChange, safeLow]
     );
 
     const trackIdle = themeClass(theme, { dark: 'bg-zinc-700/80', light: 'bg-zinc-200' });
@@ -104,7 +116,7 @@ export const FilterDualRange: React.FC<Props> = ({
                 min={boundMin}
                 max={inputMax}
                 step={safeStep}
-                value={safeLow}
+                value={toSliderValue(safeLow)}
                 aria-label="Минимум диапазона"
                 aria-labelledby={ariaLabelledBy}
                 className="absolute inset-0 z-[3] w-full"
@@ -117,7 +129,7 @@ export const FilterDualRange: React.FC<Props> = ({
                 min={boundMin}
                 max={inputMax}
                 step={safeStep}
-                value={safeHigh}
+                value={toSliderValue(safeHigh)}
                 aria-label="Максимум диапазона"
                 aria-labelledby={ariaLabelledBy}
                 className="absolute inset-0 z-[4] w-full"

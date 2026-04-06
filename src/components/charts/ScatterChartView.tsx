@@ -11,6 +11,34 @@ function asDomainPair(d: [number, number] | undefined): [number, number] | undef
     return d && Number.isFinite(d[0]) && Number.isFinite(d[1]) && d[0] < d[1] ? d : undefined;
 }
 
+const NON_NEGATIVE_METRIC_HINTS = [
+    'price',
+    'cost',
+    'rub',
+    'area',
+    'square',
+    'sq',
+    'rooms',
+    'floor',
+    'этаж',
+    'площад',
+    'комнат',
+    'цена',
+    'стоимость',
+];
+
+function isClearlyNonNegativeMetric(label: string): boolean {
+    const normalized = label.trim().toLowerCase();
+    return NON_NEGATIVE_METRIC_HINTS.some(hint => normalized.includes(hint));
+}
+
+function clampDomainLowerBound(domain: [number, number] | undefined, clampToZero: boolean): [number, number] | undefined {
+    if (!domain || !clampToZero) return domain;
+    const lo = Math.max(0, domain[0]);
+    const hi = Math.max(lo + Number.EPSILON, domain[1]);
+    return [lo, hi];
+}
+
 export const ScatterChartView: React.FC<{
     xLabel: string;
     yLabel: string;
@@ -35,6 +63,8 @@ export const ScatterChartView: React.FC<{
     const sortedScatter = useMemo(() => [...displayPoints].sort((a, b) => a.x - b.x), [displayPoints]);
     const [brushRange, setBrushRange] = useState<{ start: number; end: number } | null>(null);
     const maxBrushIndex = Math.max(0, sortedScatter.length - 1);
+    const xNonNegative = isClearlyNonNegativeMetric(xLabel);
+    const yNonNegative = isClearlyNonNegativeMetric(yLabel);
     const selectedScatter = useMemo(() => {
         if (!brushRange) return sortedScatter;
         const start = Math.max(0, Math.min(maxBrushIndex, brushRange.start));
@@ -43,15 +73,17 @@ export const ScatterChartView: React.FC<{
     }, [brushRange, maxBrushIndex, sortedScatter]);
     const domainSource = selectedScatter.length > 1 ? selectedScatter : raw;
     const xDomain = useMemo(
-        () => asDomainPair(axisDomainFromValues(domainSource.map(p => p.x))) ?? (['auto', 'auto'] as const),
-        [domainSource]
+        () => clampDomainLowerBound(asDomainPair(axisDomainFromValues(domainSource.map(p => p.x))), xNonNegative) ?? (['auto', 'auto'] as const),
+        [domainSource, xNonNegative]
     );
     const yDomain = useMemo(
-        () => asDomainPair(axisDomainFromValues(domainSource.map(p => p.y))) ?? (['auto', 'auto'] as const),
-        [domainSource]
+        () => clampDomainLowerBound(asDomainPair(axisDomainFromValues(domainSource.map(p => p.y))), yNonNegative) ?? (['auto', 'auto'] as const),
+        [domainSource, yNonNegative]
     );
     const brushFill = theme === 'dark' ? '#111827' : '#eef2ff';
     const resetBrush = () => setBrushRange(null);
+    const brushStart = brushRange?.start ?? 0;
+    const brushEnd = brushRange?.end ?? maxBrushIndex;
 
     return (
         <div className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col">
@@ -134,8 +166,8 @@ export const ScatterChartView: React.FC<{
                                 fillOpacity={0.62}
                                 travellerWidth={10}
                                 tickFormatter={() => ''}
-                                startIndex={brushRange?.start}
-                                endIndex={brushRange?.end}
+                                startIndex={brushStart}
+                                endIndex={brushEnd}
                                 onChange={({ startIndex, endIndex }) => {
                                     if (typeof startIndex !== 'number' || typeof endIndex !== 'number') return;
                                     const start = Math.max(0, Math.min(startIndex, endIndex));

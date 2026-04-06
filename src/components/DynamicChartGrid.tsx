@@ -126,6 +126,7 @@ export const DynamicChartGrid: React.FC<{
     const expandedExportRef = useRef<HTMLDivElement>(null);
     const [expandedExportBusy, setExpandedExportBusy] = useState(false);
     const [histZoomById, setHistZoomById] = useState<Record<string, { min: number; max: number }>>({});
+    const [histBrushById, setHistBrushById] = useState<Record<string, { start: number; end: number }>>({});
     const [categoryBrushById, setCategoryBrushById] = useState<Record<string, { start: number; end: number }>>({});
 
     useEffect(() => {
@@ -160,6 +161,25 @@ export const DynamicChartGrid: React.FC<{
     useEffect(() => {
         const ids = new Set(charts.map(c => c.id));
         setCategoryBrushById(prev => {
+            const next: Record<string, { start: number; end: number }> = {};
+            let changed = false;
+            for (const [id, range] of Object.entries(prev)) {
+                if (
+                    ids.has(id) &&
+                    range &&
+                    Number.isInteger((range as { start?: number }).start) &&
+                    Number.isInteger((range as { end?: number }).end)
+                ) {
+                    next[id] = range as { start: number; end: number };
+                } else changed = true;
+            }
+            return changed ? next : prev;
+        });
+    }, [charts]);
+
+    useEffect(() => {
+        const ids = new Set(charts.map(c => c.id));
+        setHistBrushById(prev => {
             const next: Record<string, { start: number; end: number }> = {};
             let changed = false;
             for (const [id, range] of Object.entries(prev)) {
@@ -289,7 +309,20 @@ export const DynamicChartGrid: React.FC<{
                     delete next[def.id];
                     return next;
                 });
+                setHistBrushById(prev => {
+                    const next = { ...prev };
+                    delete next[def.id];
+                    return next;
+                });
             };
+            const maxHistIndex = Math.max(0, distribution.length - 1);
+            const histWindow = histBrushById[def.id];
+            const histStartIndex =
+                typeof histWindow?.start === 'number' ? Math.max(0, Math.min(maxHistIndex, histWindow.start)) : 0;
+            const histEndIndex =
+                typeof histWindow?.end === 'number'
+                    ? Math.max(histStartIndex, Math.min(maxHistIndex, histWindow.end))
+                    : maxHistIndex;
             if (empty) {
                 return {
                     hasData: false,
@@ -393,6 +426,11 @@ export const DynamicChartGrid: React.FC<{
                                         onClick={barItem => {
                                             const r = barItem?.payload?.range as BinRange | undefined;
                                             if (r && Number.isFinite(r.min) && Number.isFinite(r.max)) {
+                                                setHistBrushById(prev => {
+                                                    const next = { ...prev };
+                                                    delete next[def.id];
+                                                    return next;
+                                                });
                                                 setHistZoomById(prev => ({ ...prev, [def.id]: { min: r.min, max: r.max } }));
                                             }
                                         }}
@@ -405,6 +443,8 @@ export const DynamicChartGrid: React.FC<{
                                         fillOpacity={0.62}
                                         travellerWidth={10}
                                         tickFormatter={() => ''}
+                                        startIndex={histStartIndex}
+                                        endIndex={histEndIndex}
                                         ariaLabel="Выбор диапазона по бинам"
                                         onChange={({ startIndex, endIndex }) => {
                                             if (typeof startIndex !== 'number' || typeof endIndex !== 'number') return;
@@ -419,6 +459,7 @@ export const DynamicChartGrid: React.FC<{
                                             const left = distribution[start]?.range;
                                             const right = distribution[end]?.range;
                                             if (!left || !right) return;
+                                            setHistBrushById(prev => ({ ...prev, [def.id]: { start, end } }));
                                             setHistZoomById(prev => ({ ...prev, [def.id]: { min: left.min, max: right.max } }));
                                         }}
                                     />

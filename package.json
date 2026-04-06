@@ -20,6 +20,7 @@
     "@types/node": "^22.14.0",
     "@types/papaparse": "^5.5.0",
     "@vitejs/plugin-react": "^5.0.0",
+    "baseline-browser-mapping": "^2.10.16",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"
   }
