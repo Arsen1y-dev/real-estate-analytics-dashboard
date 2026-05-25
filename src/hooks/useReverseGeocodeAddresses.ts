@@ -6,11 +6,28 @@ const REVERSE_GEOCODE_CONCURRENCY = 3;
 const REVERSE_GEOCODE_FAILURE_COOLDOWN_MS = 5 * 60 * 1000;
 const REVERSE_GEOCODE_FLUSH_MS = 140;
 
+export type ReverseGeocodeHookProgress = {
+    total: number;
+    resolved: number;
+    queued: number;
+    inFlight: number;
+};
+
 export function useReverseGeocodeAddresses(
     token: string | null,
-    coordsByKey: ReadonlyMap<string, { lat: number; lng: number }>
-): { resolveAddress: (key: string | null | undefined, fallback: string) => string; version: number } {
+    coordsByKey: ReadonlyMap<string, { lat: number; lng: number }>,
+    options?: { autoStart?: boolean }
+): {
+    resolveAddress: (key: string | null | undefined, fallback: string) => string;
+    version: number;
+    running: boolean;
+    setRunning: (next: boolean) => void;
+    progress: ReverseGeocodeHookProgress;
+} {
+    const autoStart = options?.autoStart ?? false;
     const [version, setVersion] = useState(0);
+    const [running, setRunning] = useState(autoStart);
+    const [queueStats, setQueueStats] = useState({ queued: 0, inFlight: 0 });
     const addressCacheRef = useRef<Record<string, string>>({});
     const queueRef = useRef<string[]>([]);
     const queuedRef = useRef<Set<string>>(new Set());
@@ -36,13 +53,21 @@ export function useReverseGeocodeAddresses(
         return out;
     }, [keys]);
 
+    const syncQueueStats = useCallback(() => {
+        setQueueStats({
+            queued: queueRef.current.length + queuedRef.current.size,
+            inFlight: inFlightRef.current.size,
+        });
+    }, []);
+
     const scheduleFlush = useCallback(() => {
         if (flushTimerRef.current != null) return;
         flushTimerRef.current = window.setTimeout(() => {
             flushTimerRef.current = null;
             setVersion(v => v + 1);
+            syncQueueStats();
         }, REVERSE_GEOCODE_FLUSH_MS);
-    }, []);
+    }, [syncQueueStats]);
 
     useEffect(
         () => () => {
@@ -53,6 +78,10 @@ export function useReverseGeocodeAddresses(
         []
     );
 
+    useEffect(() => {
+        if (autoStart) setRunning(true);
+    }, [autoStart]);
+
     const purgeQueuedKey = useCallback((key: string) => {
         queuedRef.current.delete(key);
         if (queueRef.current.length === 0) return;
@@ -60,7 +89,10 @@ export function useReverseGeocodeAddresses(
     }, []);
 
     const pumpQueue = useCallback(() => {
-        if (!token) return;
+        if (!token || !running) {
+            syncQueueStats();
+            return;
+        }
         while (activeCountRef.current < REVERSE_GEOCODE_CONCURRENCY && queueRef.current.length > 0) {
             const key = queueRef.current.shift();
             if (!key) continue;
@@ -76,6 +108,7 @@ export function useReverseGeocodeAddresses(
             }
             activeCountRef.current += 1;
             inFlightRef.current.add(key);
+            syncQueueStats();
             void reverseGeocodeByCoords(token, coords.lat, coords.lng)
                 .then(result => {
                     if (result.ok) {
@@ -103,14 +136,16 @@ export function useReverseGeocodeAddresses(
                     activeCountRef.current = Math.max(0, activeCountRef.current - 1);
                     purgeQueuedKey(key);
                     inFlightRef.current.delete(key);
-                    if (queueRef.current.length > 0) {
+                    syncQueueStats();
+                    if (running && queueRef.current.length > 0) {
                         queueMicrotask(() => {
                             pumpQueue();
                         });
                     }
                 });
         }
-    }, [token, coordsByKey, aliasKeysByCanonical, purgeQueuedKey, scheduleFlush]);
+        syncQueueStats();
+    }, [token, coordsByKey, aliasKeysByCanonical, purgeQueuedKey, scheduleFlush, running, syncQueueStats]);
 
     useEffect(() => {
         if (!token) {
@@ -155,8 +190,8 @@ export function useReverseGeocodeAddresses(
         };
     }, [token, keys, aliasKeysByCanonical, purgeQueuedKey, scheduleFlush]);
 
-    useEffect(() => {
-        if (!token || !snapshotReady) return;
+    const enqueueMissingKeys = useCallback(() => {
+        if (!token) return;
         const now = Date.now();
         for (const key of keys) {
             if (addressCacheRef.current[key]) continue;
@@ -166,13 +201,52 @@ export function useReverseGeocodeAddresses(
             queuedRef.current.add(key);
             queueRef.current.push(key);
         }
+        syncQueueStats();
         pumpQueue();
-    }, [token, keys, snapshotReady, pumpQueue]);
+    }, [token, keys, pumpQueue, syncQueueStats]);
+
+    useEffect(() => {
+        if (!token || !snapshotReady || !running) return;
+        enqueueMissingKeys();
+    }, [token, keys, snapshotReady, running, enqueueMissingKeys]);
+
+    const handleSetRunning = useCallback(
+        (next: boolean) => {
+            setRunning(next);
+            if (!next) {
+                queueRef.current = [];
+                queuedRef.current.clear();
+                syncQueueStats();
+                return;
+            }
+            if (snapshotReady) {
+                enqueueMissingKeys();
+            }
+        },
+        [enqueueMissingKeys, snapshotReady, syncQueueStats]
+    );
+
+    useEffect(() => {
+        if (running) pumpQueue();
+    }, [running, pumpQueue]);
 
     const resolveAddress = useCallback((key: string | null | undefined, fallback: string): string => {
         if (!key) return fallback;
         return addressCacheRef.current[key] ?? fallback;
     }, []);
 
-    return { resolveAddress, version };
+    const progress = useMemo((): ReverseGeocodeHookProgress => {
+        let resolved = 0;
+        for (const key of keys) {
+            if (addressCacheRef.current[key]?.trim()) resolved += 1;
+        }
+        return {
+            total: keys.length,
+            resolved,
+            queued: queueStats.queued,
+            inFlight: queueStats.inFlight,
+        };
+    }, [keys, queueStats.inFlight, queueStats.queued, version]);
+
+    return { resolveAddress, version, running, setRunning: handleSetRunning, progress };
 }

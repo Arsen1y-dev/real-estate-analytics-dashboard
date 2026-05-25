@@ -370,7 +370,9 @@ export const ObjectsMap = React.memo(function ObjectsMap({
         }
         return out;
     }, [points]);
-    const { resolveAddress, version: reverseAddressVersion } = useReverseGeocodeAddresses(token, reverseGeocodeCoordsByKey);
+    const { resolveAddress, version: reverseAddressVersion } = useReverseGeocodeAddresses(token, reverseGeocodeCoordsByKey, {
+        autoStart: true,
+    });
     const geocodedPoints = useMemo(() => {
         return points.map(point => {
             const key = buildCanonicalReverseGeocodeKey(point.lat, point.lng)?.cacheKey;
@@ -644,21 +646,22 @@ export const ObjectsMap = React.memo(function ObjectsMap({
                             })}
                         >
                             <p>
-                                В текущей фильтрованной выборке нет строк с http(s)-ссылкой в «Ссылка» и координатами
-                                (колонки «Широта»/«Долгота» или «Геолокация» lat,lng).
+                                На карте нечего показать: среди отфильтрованных объявлений нет ни одного с координатами
+                                и ссылкой на карточку.
                                 {rowsWithLink > 0 && (
                                     <>
                                         {' '}
-                                        Со ссылкой: {rowsWithLink}, без валидных координат: {mapStats.missingCoords},
-                                        вне радиуса {MAX_DISTANCE_FROM_CITY_CENTER_KM} км: {mapStats.tooFarFiltered}.
+                                        Со ссылкой — {rowsWithLink}, без координат — {mapStats.missingCoords}, слишком
+                                        далеко от центра города (&gt;{MAX_DISTANCE_FROM_CITY_CENTER_KM} км) —{' '}
+                                        {mapStats.tooFarFiltered}.
                                     </>
                                 )}
                             </p>
                             {rowsWithLink > 0 && points.length === 0 && (
                                 <p className="text-xs opacity-80">
-                                    Частая причина: «Геолокация» сохранена одним числом (только широта) или ссылка и
-                                    координаты в разных строках без общего ID — перезагрузите с сервера (склейка при
-                                    загрузке) или переимпортируйте CSV.
+                                    Часто координаты и ссылка лежат в разных строках CSV или «Геолокация» записана
+                                    неполной. Обновите датасет с сервера или переимпортируйте файл после ETL — при
+                                    загрузке строки склеиваются по ID объявления.
                                 </p>
                             )}
                         </div>

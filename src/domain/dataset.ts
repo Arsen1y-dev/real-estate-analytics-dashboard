@@ -1,5 +1,6 @@
 import type { ColumnInfo, CoreColumnMap, DataRow, DataSummary, Range } from '@/types';
-import { looksLikeGeolocationPair } from '../../shared/geolocation';
+import { looksLikeGeolocationPair, parseGeolocationCell } from '../../shared/geolocation';
+import { inferDatasetColumnKind } from '../../shared/columnFilterKind';
 import { collectRoomFilterOptions, resolveRoomsColumn } from '../../shared/rooms';
 import { parseNumber } from '@/utils/parseNumber';
 
@@ -106,10 +107,9 @@ export function buildDataSummary(rows: DataRow[], columnOrder: string[]): DataSu
     }
 
     const columns: ColumnInfo[] = columnOrder.map((name, i) => {
-        if (name.startsWith('тип_дома_')) return { name, kind: 'categorical' as const };
         const total = valueHits[i];
         if (total === 0) return { name, kind: 'categorical' as const };
-        const kind = numericHits[i] / total >= 0.85 ? ('numeric' as const) : ('categorical' as const);
+        const kind = inferDatasetColumnKind(name, numericHits[i] / total);
         return { name, kind };
     });
 

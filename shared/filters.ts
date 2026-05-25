@@ -1,4 +1,5 @@
 import type { AdditionalFilterCondition, DataRow, DataSummary, FilterSettings } from './dashboard';
+import { isBinaryFeatureColumn } from './columnFilterKind';
 import { parseRoomCount } from './rooms';
 
 export function isFiniteNumber(v: unknown): v is number {
@@ -56,6 +57,10 @@ function rowPassesAdditionalCondition(
     columnKinds: Map<string, 'numeric' | 'categorical'>
 ): boolean {
     const raw = row[condition.column];
+    if (isBinaryFeatureColumn(condition.column)) {
+        const wantYes = condition.value !== '0';
+        return asBool(raw) === wantYes;
+    }
     const kind = columnKinds.get(condition.column) ?? 'categorical';
     if (kind === 'numeric') {
         const value = asNumber(raw);

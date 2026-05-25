@@ -15,6 +15,7 @@ import { mergeDatasetRows, mergeTwoDatasetRows } from '../shared/mergeDatasetRow
 import { offerIdsFromRow } from '../shared/listingIds';
 import type { CityProfile } from '../shared/cities';
 import { getCityDistanceLimitKm } from '../shared/cities';
+import { inferDatasetColumnKind } from '../shared/columnFilterKind';
 import { isPollutedParserAddress } from '../shared/pollutedAddresses';
 
 export type DatasetState = { rows: DataRow[]; summary: DataSummary };
@@ -60,14 +61,19 @@ function withHouseType(row: DataRow, columnOrder: string[]): DataRow {
 
 function buildSummary(rows: DataRow[]): DataSummary {
     const columnOrder = publicColumnOrderFromRows(rows);
-    const inferKind = (name: string): 'numeric' | 'categorical' => {
-        if (name.startsWith('тип_дома_')) return 'categorical';
+    const inferKind = (name: string, numericRatio: number): 'numeric' | 'categorical' =>
+        inferDatasetColumnKind(name, numericRatio);
+    const numericRatios = new Map<string, number>();
+    for (const name of columnOrder) {
         const vals = rows.map(r => r[name]).filter(v => v !== '' && v != null);
-        if (!vals.length) return 'categorical';
+        if (!vals.length) {
+            numericRatios.set(name, 0);
+            continue;
+        }
         const n = vals.filter(isFiniteNumber).length;
-        return n / vals.length >= 0.85 ? 'numeric' : 'categorical';
-    };
-    const columns = columnOrder.map(name => ({ name, kind: inferKind(name) }));
+        numericRatios.set(name, n / vals.length);
+    }
+    const columns = columnOrder.map(name => ({ name, kind: inferKind(name, numericRatios.get(name) ?? 0) }));
     const set = new Set(columnOrder);
     const coreColumnMap = {
         price: set.has('Цена') ? 'Цена' : null,

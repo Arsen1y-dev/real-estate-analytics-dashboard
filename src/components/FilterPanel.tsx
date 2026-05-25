@@ -1,6 +1,7 @@
 import React, { useId, useMemo } from 'react';
 import type { DataRow, DataSummary, FilterSettings } from '@/types';
 import { collectRoomFilterOptions } from '../../shared/rooms';
+import { additionalFilterInputKind } from '../../shared/columnFilterKind';
 import { isAnyFilterDirty } from '@/domain/filters';
 import { themeClass, type Theme } from '@/theme';
 import { CloseIcon } from '@/components/icons';
@@ -107,17 +108,35 @@ export const FilterPanel: React.FC<{
         () => summary.columnOrder.filter(name => additionalColumnKind.has(name)),
         [summary.columnOrder, additionalColumnKind]
     );
+    const additionalColumnOptions = useMemo(() => {
+        const out = new Map<string, string[]>();
+        for (const column of additionalColumns) {
+            const inputKind = additionalFilterInputKind(column, additionalColumnKind.get(column));
+            if (inputKind === 'binary') continue;
+            if (inputKind === 'number') continue;
+            const values = new Set<string>();
+            for (const row of allData) {
+                const raw = row[column];
+                if (raw === '' || raw == null) continue;
+                const text = String(raw).trim();
+                if (text) values.add(text);
+                if (values.size >= 40) break;
+            }
+            out.set(column, Array.from(values).sort((a, b) => a.localeCompare(b, 'ru')));
+        }
+        return out;
+    }, [additionalColumns, additionalColumnKind, allData]);
     const canAddAdditionalFilter = additionalColumns.length > 0;
     const defaultAdditionalColumn = additionalColumns[0] ?? '';
 
     const makeConditionForColumn = (column: string, id?: string): FilterSettings['additionalFilters'][number] => {
-        const kind = additionalColumnKind.get(column) === 'numeric' ? 'number' : 'text';
+        const inputKind = additionalFilterInputKind(column, additionalColumnKind.get(column));
         return {
             id: id ?? nextAdditionalFilterId(),
             column,
-            operator: kind === 'number' ? 'gte' : 'equals',
-            value: '',
-            valueTo: kind === 'number' ? '' : undefined,
+            operator: inputKind === 'number' ? 'gte' : 'equals',
+            value: inputKind === 'binary' ? '1' : '',
+            valueTo: inputKind === 'number' ? '' : undefined,
         };
     };
 
@@ -496,7 +515,15 @@ export const FilterPanel: React.FC<{
                     ) : (
                         <div className="space-y-2.5">
                             {filters.additionalFilters.map((condition) => {
-                                const kind = additionalColumnKind.get(condition.column) === 'numeric' ? 'number' : 'text';
+                                const inputKind = additionalFilterInputKind(
+                                    condition.column,
+                                    additionalColumnKind.get(condition.column)
+                                );
+                                const selectClass = themeClass(theme, {
+                                    dark: 'min-h-[2.25rem] w-full rounded-lg border border-zinc-700/90 bg-zinc-900/90 px-2.5 text-sm text-zinc-100 focus:border-indigo-500/50 focus:outline-none focus:ring-2 focus:ring-indigo-500/20',
+                                    light: 'min-h-[2.25rem] w-full rounded-lg border border-zinc-200 bg-white px-2.5 text-sm text-zinc-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/15',
+                                });
+                                const columnOptions = additionalColumnOptions.get(condition.column) ?? [];
                                 return (
                                     <div
                                         key={condition.id}
@@ -509,10 +536,7 @@ export const FilterPanel: React.FC<{
                                             <select
                                                 value={condition.column}
                                                 onChange={(e) => updateAdditionalFilterColumn(condition.id, e.target.value)}
-                                                className={themeClass(theme, {
-                                                    dark: 'min-h-[2.25rem] w-full rounded-lg border border-zinc-700/90 bg-zinc-900/90 px-2.5 text-sm text-zinc-100 focus:border-indigo-500/50 focus:outline-none focus:ring-2 focus:ring-indigo-500/20',
-                                                    light: 'min-h-[2.25rem] w-full rounded-lg border border-zinc-200 bg-white px-2.5 text-sm text-zinc-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/15',
-                                                })}
+                                                className={selectClass}
                                             >
                                                 {additionalColumns.map(col => (
                                                     <option key={col} value={col}>
@@ -531,51 +555,92 @@ export const FilterPanel: React.FC<{
                                                 Удалить
                                             </button>
                                         </div>
-                                        <div className={`grid grid-cols-1 gap-2 ${kind === 'number' && condition.operator === 'between' ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
+                                        {inputKind === 'binary' ? (
                                             <select
-                                                value={condition.operator}
-                                                onChange={(e) => updateAdditionalFilterOperator(condition.id, e.target.value as 'gte' | 'lte' | 'between' | 'equals' | 'contains')}
-                                                className={themeClass(theme, {
-                                                    dark: 'min-h-[2.25rem] w-full rounded-lg border border-zinc-700/90 bg-zinc-900/90 px-2.5 text-sm text-zinc-100 focus:border-indigo-500/50 focus:outline-none focus:ring-2 focus:ring-indigo-500/20',
-                                                    light: 'min-h-[2.25rem] w-full rounded-lg border border-zinc-200 bg-white px-2.5 text-sm text-zinc-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/15',
-                                                })}
+                                                value={condition.value || '1'}
+                                                onChange={(e) => updateAdditionalFilterValue(condition.id, 'value', e.target.value)}
+                                                className={selectClass}
                                             >
-                                                {kind === 'number' ? (
-                                                    <>
-                                                        <option value="gte">{'>='}</option>
-                                                        <option value="lte">{'<='}</option>
-                                                        <option value="between">Между</option>
-                                                    </>
+                                                <option value="1">Да</option>
+                                                <option value="0">Нет</option>
+                                            </select>
+                                        ) : (
+                                            <div
+                                                className={`grid grid-cols-1 gap-2 ${inputKind === 'number' && condition.operator === 'between' ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}
+                                            >
+                                                {inputKind !== 'number' && columnOptions.length > 0 ? (
+                                                    <select
+                                                        value={condition.value}
+                                                        onChange={(e) =>
+                                                            updateAdditionalFilterValue(condition.id, 'value', e.target.value)
+                                                        }
+                                                        className={selectClass}
+                                                    >
+                                                        <option value="">Выберите значение</option>
+                                                        {columnOptions.map(option => (
+                                                            <option key={option} value={option}>
+                                                                {option}
+                                                            </option>
+                                                        ))}
+                                                    </select>
                                                 ) : (
                                                     <>
-                                                        <option value="equals">Равно</option>
-                                                        <option value="contains">Содержит</option>
+                                                        <select
+                                                            value={condition.operator}
+                                                            onChange={(e) =>
+                                                                updateAdditionalFilterOperator(
+                                                                    condition.id,
+                                                                    e.target.value as
+                                                                        | 'gte'
+                                                                        | 'lte'
+                                                                        | 'between'
+                                                                        | 'equals'
+                                                                        | 'contains'
+                                                                )
+                                                            }
+                                                            className={selectClass}
+                                                        >
+                                                            {inputKind === 'number' ? (
+                                                                <>
+                                                                    <option value="gte">{'>='}</option>
+                                                                    <option value="lte">{'<='}</option>
+                                                                    <option value="between">Между</option>
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <option value="equals">Равно</option>
+                                                                    <option value="contains">Содержит</option>
+                                                                </>
+                                                            )}
+                                                        </select>
+                                                        <input
+                                                            type={inputKind === 'number' ? 'number' : 'text'}
+                                                            value={condition.value}
+                                                            onChange={(e) =>
+                                                                updateAdditionalFilterValue(condition.id, 'value', e.target.value)
+                                                            }
+                                                            placeholder={inputKind === 'number' ? 'Значение' : 'Введите текст'}
+                                                            className={selectClass}
+                                                        />
+                                                        {inputKind === 'number' && condition.operator === 'between' && (
+                                                            <input
+                                                                type="number"
+                                                                value={condition.valueTo ?? ''}
+                                                                onChange={(e) =>
+                                                                    updateAdditionalFilterValue(
+                                                                        condition.id,
+                                                                        'valueTo',
+                                                                        e.target.value
+                                                                    )
+                                                                }
+                                                                placeholder="До"
+                                                                className={selectClass}
+                                                            />
+                                                        )}
                                                     </>
                                                 )}
-                                            </select>
-                                            <input
-                                                type={kind === 'number' ? 'number' : 'text'}
-                                                value={condition.value}
-                                                onChange={(e) => updateAdditionalFilterValue(condition.id, 'value', e.target.value)}
-                                                placeholder={kind === 'number' ? 'Значение' : 'Введите текст'}
-                                                className={themeClass(theme, {
-                                                    dark: 'min-h-[2.25rem] w-full rounded-lg border border-zinc-700/90 bg-zinc-900/90 px-2.5 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-indigo-500/50 focus:outline-none focus:ring-2 focus:ring-indigo-500/20',
-                                                    light: 'min-h-[2.25rem] w-full rounded-lg border border-zinc-200 bg-white px-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/15',
-                                                })}
-                                            />
-                                            {kind === 'number' && condition.operator === 'between' && (
-                                                <input
-                                                    type="number"
-                                                    value={condition.valueTo ?? ''}
-                                                    onChange={(e) => updateAdditionalFilterValue(condition.id, 'valueTo', e.target.value)}
-                                                    placeholder="До"
-                                                    className={themeClass(theme, {
-                                                        dark: 'min-h-[2.25rem] w-full rounded-lg border border-zinc-700/90 bg-zinc-900/90 px-2.5 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-indigo-500/50 focus:outline-none focus:ring-2 focus:ring-indigo-500/20',
-                                                        light: 'min-h-[2.25rem] w-full rounded-lg border border-zinc-200 bg-white px-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/15',
-                                                    })}
-                                                />
-                                            )}
-                                        </div>
+                                            </div>
+                                        )}
                                     </div>
                                 );
                             })}

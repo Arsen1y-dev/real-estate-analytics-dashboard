@@ -53,15 +53,14 @@ export function DatasetSourceBadge({
           : `Личный · ${personalFileLabel(personalFileKey)} · ${rowCount.toLocaleString('ru-RU')} объектов после очистки`;
 
     return (
-        <div className="flex min-w-0 flex-wrap items-center gap-2 xl:flex-nowrap">
+        <div className="flex flex-wrap items-center gap-2">
             <span
                 className={themeClass(theme, {
-                    dark: `${CONTROL_CHIP_BASE} max-w-full border border-emerald-500/25 bg-emerald-500/[0.08] text-emerald-100/95`,
-                    light: `${CONTROL_CHIP_BASE} max-w-full border border-emerald-200/80 bg-emerald-50/90 text-emerald-900`,
+                    dark: `${CONTROL_CHIP_BASE} border border-emerald-500/25 bg-emerald-500/[0.08] text-emerald-100/95`,
+                    light: `${CONTROL_CHIP_BASE} border border-emerald-200/80 bg-emerald-50/90 text-emerald-900`,
                 })}
-                title={label}
             >
-                <span className="min-w-0 max-w-full truncate">{label}</span>
+                {label}
             </span>
             {!isObserver && onChangeSource && (
                 <button

@@ -12,6 +12,7 @@ import { buildCanonicalReverseGeocodeKey } from '../../shared/reverseGeocodeKey'
 import { buildListingLinkIndex, listingLinkFromRow, offerIdsFromRow } from '@/utils/listingLink';
 import { createLruTtlCache } from '@/utils/memoCache';
 import { useReverseGeocodeAddresses } from '@/hooks/useReverseGeocodeAddresses';
+import { ReverseGeocodePanel } from '@/components/ReverseGeocodePanel';
 
 type SortDir = 'asc' | 'desc';
 
@@ -298,7 +299,13 @@ export const FilteredListingsTable = React.memo(function FilteredListingsTable({
         return out;
     }, [preparedRows]);
 
-    const { resolveAddress, version: reverseAddressVersion } = useReverseGeocodeAddresses(token, reverseGeocodeCoordsByKey);
+    const {
+        resolveAddress,
+        version: reverseAddressVersion,
+        running: geocodeRunning,
+        setRunning: setGeocodeRunning,
+        progress: geocodeProgress,
+    } = useReverseGeocodeAddresses(token, reverseGeocodeCoordsByKey, { autoStart: false });
 
     const sortAddressVersion = reverseAddressVersion;
     const sorted = useMemo(() => {
@@ -449,6 +456,14 @@ export const FilteredListingsTable = React.memo(function FilteredListingsTable({
                     )}
                 </div>
             </div>
+
+            <ReverseGeocodePanel
+                theme={theme}
+                progress={geocodeProgress}
+                running={geocodeRunning}
+                onStart={() => setGeocodeRunning(true)}
+                onStop={() => setGeocodeRunning(false)}
+            />
 
             <div className="mb-3 grid gap-2 sm:grid-cols-3">
                 <label className="text-xs">
