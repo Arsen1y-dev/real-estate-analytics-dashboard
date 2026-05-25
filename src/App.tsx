@@ -536,42 +536,42 @@ function App() {
                             >
                                 {headerSubtitle}
                             </p>
-                            <div className="flex min-w-0 flex-wrap items-center gap-2.5 xl:flex-nowrap xl:items-center xl:gap-3">
-                                <span
-                                    className={themeClass(theme, {
-                                        dark: `${CONTROL_CHIP_BASE} border border-indigo-500/30 bg-indigo-500/10 text-indigo-200`,
-                                        light: `${CONTROL_CHIP_BASE} border border-indigo-200 bg-indigo-50 text-indigo-800`,
-                                    })}
-                                >
-                                    {roleLabel(user.role)}
-                                </span>
-                                <CitySwitcher
-                                    theme={theme}
-                                    cities={cityOptions}
-                                    value={selectedCityId}
-                                    onChange={handleCityChange}
-                                    disabled={isLoading || loadPhase === 'loading'}
-                                />
-                                <div className="min-w-0 xl:flex-1">
-                                    <DatasetSourceBadge
+                            <div className="space-y-2">
+                                <div className="flex flex-wrap items-center gap-2.5">
+                                    <span
+                                        className={themeClass(theme, {
+                                            dark: `${CONTROL_CHIP_BASE} border border-indigo-500/30 bg-indigo-500/10 text-indigo-200`,
+                                            light: `${CONTROL_CHIP_BASE} border border-indigo-200 bg-indigo-50 text-indigo-800`,
+                                        })}
+                                    >
+                                        {roleLabel(user.role)}
+                                    </span>
+                                    <CitySwitcher
                                         theme={theme}
-                                        role={user.role}
-                                        mode={dataSourceMode ?? 'server'}
-                                        rowCount={allData.length}
-                                        meta={serverMeta}
-                                        cityLabel={selectedCityLabel}
-                                        personalFileKey={personalFileKey}
-                                        onChangeSource={caps?.canPickDataSource ? handleChangeSource : undefined}
-                                        onRefreshServer={
-                                            caps?.canRefreshFromServer &&
-                                            dataSourceMode === 'server' &&
-                                            selectedCityId
-                                                ? () => void loadServerDataset(selectedCityId, { silent: true })
-                                                : undefined
-                                        }
-                                        refreshing={refreshingServer}
+                                        cities={cityOptions}
+                                        value={selectedCityId}
+                                        onChange={handleCityChange}
+                                        disabled={isLoading || loadPhase === 'loading'}
                                     />
                                 </div>
+                                <DatasetSourceBadge
+                                    theme={theme}
+                                    role={user.role}
+                                    mode={dataSourceMode ?? 'server'}
+                                    rowCount={allData.length}
+                                    meta={serverMeta}
+                                    cityLabel={selectedCityLabel}
+                                    personalFileKey={personalFileKey}
+                                    onChangeSource={caps?.canPickDataSource ? handleChangeSource : undefined}
+                                    onRefreshServer={
+                                        caps?.canRefreshFromServer &&
+                                        dataSourceMode === 'server' &&
+                                        selectedCityId
+                                            ? () => void loadServerDataset(selectedCityId, { silent: true })
+                                            : undefined
+                                    }
+                                    refreshing={refreshingServer}
+                                />
                             </div>
                         </div>
                         <div className="flex w-full flex-wrap gap-2.5 xl:w-auto xl:shrink-0 xl:flex-nowrap xl:justify-end">

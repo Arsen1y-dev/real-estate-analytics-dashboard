@@ -4,7 +4,7 @@ import { themeClass } from '@/theme';
 import type { DataSourceMode } from '@/domain/dataSource';
 import type { DatasetMeta } from '@/types';
 import type { Role } from '@/auth';
-import { CONTROL_BUTTON_BASE, CONTROL_CHIP_BASE } from '@/components/controlStyles';
+import { CONTROL_BUTTON_BASE } from '@/components/controlStyles';
 
 function formatUpdated(at: string | undefined): string {
     if (!at) return '—';
@@ -52,16 +52,8 @@ export function DatasetSourceBadge({
           ? `Сервер · ${cityPart}${rowCount.toLocaleString('ru-RU')} объектов после очистки · ${formatUpdated(meta?.updatedAt)}`
           : `Личный · ${personalFileLabel(personalFileKey)} · ${rowCount.toLocaleString('ru-RU')} объектов после очистки`;
 
-    return (
-        <div className="flex flex-wrap items-center gap-2">
-            <span
-                className={themeClass(theme, {
-                    dark: `${CONTROL_CHIP_BASE} border border-emerald-500/25 bg-emerald-500/[0.08] text-emerald-100/95`,
-                    light: `${CONTROL_CHIP_BASE} border border-emerald-200/80 bg-emerald-50/90 text-emerald-900`,
-                })}
-            >
-                {label}
-            </span>
+    const actions = (
+        <>
             {!isObserver && onChangeSource && (
                 <button
                     type="button"
@@ -87,6 +79,21 @@ export function DatasetSourceBadge({
                     {refreshing ? 'Обновление…' : 'Обновить с сервера'}
                 </button>
             )}
+        </>
+    );
+    const hasActions = !isObserver && (onChangeSource || (mode === 'server' && onRefreshServer));
+
+    return (
+        <div className="flex min-w-0 flex-col gap-2 lg:flex-row lg:items-center lg:gap-3">
+            <p
+                className={themeClass(theme, {
+                    dark: 'min-w-0 flex-1 rounded-xl border border-emerald-500/25 bg-emerald-500/[0.08] px-3 py-2.5 text-sm leading-snug text-emerald-100/95',
+                    light: 'min-w-0 flex-1 rounded-xl border border-emerald-200/80 bg-emerald-50/90 px-3 py-2.5 text-sm leading-snug text-emerald-900',
+                })}
+            >
+                {label}
+            </p>
+            {hasActions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
         </div>
     );
 }
