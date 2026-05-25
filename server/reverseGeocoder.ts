@@ -8,6 +8,9 @@ import {
 
 const DEFAULT_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 7_000;
+/** Nominatim fair-use: max 1 request per second (https://operations.osmfoundation.org/policies/nominatim/). */
+const NOMINATIM_MIN_INTERVAL_MS = 1_100;
+const NOMINATIM_429_RETRY_DELAYS_MS = [2_000, 5_000];
 
 type ReverseGeocodeSource = 'cache' | 'online' | 'fallback';
 type FallbackReason =
@@ -21,7 +24,7 @@ type FallbackReason =
     | 'public_fallback_error'
     | 'all_fallbacks_failed';
 
-type ReverseProvider = 'cache' | 'yandex-key' | 'yandex-public' | 'nominatim-public';
+type ReverseProvider = 'cache' | 'yandex-key' | 'yandex-public' | 'nominatim-public' | 'photon-public';
 
 export type ReverseGeocodeResponse = {
     cacheKey: string;
@@ -91,7 +94,38 @@ function parseNominatimAddress(payload: unknown): string | null {
     return displayName || null;
 }
 
+function parsePhotonAddress(payload: unknown): string | null {
+    if (!payload || typeof payload !== 'object') return null;
+    const root = payload as {
+        features?: Array<{
+            properties?: {
+                country?: string;
+                city?: string;
+                district?: string;
+                street?: string;
+                housenumber?: string;
+                name?: string;
+            };
+        }>;
+    };
+    const props = root.features?.[0]?.properties;
+    if (!props) return null;
+    const streetLine = [props.street, props.housenumber].filter(Boolean).join(', ').trim();
+    const parts = [props.country, props.city, props.district, streetLine || props.name]
+        .map(v => (typeof v === 'string' ? v.trim() : ''))
+        .filter(Boolean);
+    const unique = Array.from(new Set(parts));
+    return unique.length > 0 ? unique.join(', ') : null;
+}
+
+function looksLikeMissingApiKey(status: number, payloadText: string): boolean {
+    if (status !== 400) return false;
+    const normalized = payloadText.toLowerCase();
+    return normalized.includes('missing apikey') || normalized.includes('missing api key');
+}
+
 function looksLikeInvalidApiKey(status: number, payloadText: string): boolean {
+    if (looksLikeMissingApiKey(status, payloadText)) return false;
     if (status === 401 || status === 403) return true;
     if (!payloadText) return false;
     const normalized = payloadText.toLowerCase();
@@ -114,6 +148,8 @@ export class ReverseGeocoderService {
     private readonly precision: number;
     private readonly memoryCache = new Map<string, { address: string; expiresAt: number }>();
     private readonly inFlight = new Map<string, Promise<ReverseGeocodeResponse>>();
+    private nominatimQueue: Promise<void> = Promise.resolve();
+    private nominatimLastRequestAt = 0;
     private readonly selectCacheStmt;
     private readonly selectCacheByCoordsStmt;
     private readonly upsertCacheStmt;
@@ -122,20 +158,7 @@ export class ReverseGeocoderService {
         this.apiKey = String(process.env.YANDEX_GEOCODER_API_KEY ?? '').trim();
         this.ttlMs = parseTtlMs(process.env.REVERSE_GEOCODE_TTL_DAYS);
         this.precision = REVERSE_GEOCODE_KEY_PRECISION;
-        db.exec(`
-CREATE TABLE IF NOT EXISTS reverse_geocode_cache (
-  cache_key TEXT PRIMARY KEY,
-  lat REAL NOT NULL,
-  lng REAL NOT NULL,
-  address TEXT NOT NULL,
-  updated_at INTEGER NOT NULL,
-  expires_at INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_reverse_geocode_expires_at
-  ON reverse_geocode_cache(expires_at);
-CREATE INDEX IF NOT EXISTS idx_reverse_geocode_lat_lng
-  ON reverse_geocode_cache(lat, lng);
-`);
+        this.ensureCacheTable(db);
         this.selectCacheStmt = db.prepare(
             'SELECT cache_key, address, expires_at FROM reverse_geocode_cache WHERE cache_key = ? LIMIT 1'
         );
@@ -154,6 +177,45 @@ ON CONFLICT(cache_key) DO UPDATE SET
   updated_at = excluded.updated_at,
   expires_at = excluded.expires_at;
 `);
+    }
+
+    private ensureCacheTable(db: Database.Database): void {
+        db.exec(`
+CREATE TABLE IF NOT EXISTS reverse_geocode_cache (
+  cache_key TEXT PRIMARY KEY,
+  lat REAL NOT NULL,
+  lng REAL NOT NULL,
+  address TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_reverse_geocode_expires_at
+  ON reverse_geocode_cache(expires_at);
+CREATE INDEX IF NOT EXISTS idx_reverse_geocode_lat_lng
+  ON reverse_geocode_cache(lat, lng);
+`);
+        try {
+            db.prepare('SELECT 1 FROM reverse_geocode_cache LIMIT 1').get();
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'unknown error';
+            // eslint-disable-next-line no-console
+            console.warn(`[reverse-geocode] cache table corrupted, recreating: ${message}`);
+            db.exec(`
+DROP TABLE IF EXISTS reverse_geocode_cache;
+CREATE TABLE reverse_geocode_cache (
+  cache_key TEXT PRIMARY KEY,
+  lat REAL NOT NULL,
+  lng REAL NOT NULL,
+  address TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL
+);
+CREATE INDEX idx_reverse_geocode_expires_at
+  ON reverse_geocode_cache(expires_at);
+CREATE INDEX idx_reverse_geocode_lat_lng
+  ON reverse_geocode_cache(lat, lng);
+`);
+        }
     }
 
     private logDev(event: string, payload: Record<string, unknown>): void {
@@ -269,12 +331,19 @@ ON CONFLICT(cache_key) DO UPDATE SET
             lastFailure = yandexWithKey.reason;
         }
 
-        const yandexWithoutKey = await this.fetchYandexAddress(lat, lng, null);
-        if (yandexWithoutKey.address) {
-            this.saveCache(cacheKey, lat, lng, yandexWithoutKey.address);
-            return { cacheKey, address: yandexWithoutKey.address, source: 'online', fallbackReason: null, provider: 'yandex-public' };
+        // Yandex Geocoder v1 always requires apikey; unauthenticated calls return 400 "Missing apikey".
+        const photon = await this.fetchPhotonAddress(lat, lng);
+        if (photon.address) {
+            this.saveCache(cacheKey, lat, lng, photon.address);
+            return {
+                cacheKey,
+                address: photon.address,
+                source: 'online',
+                fallbackReason: null,
+                provider: 'photon-public',
+            };
         }
-        lastFailure = yandexWithoutKey.reason;
+        lastFailure = photon.reason;
 
         const nominatim = await this.fetchNominatimAddress(lat, lng);
         if (nominatim.address) {
@@ -303,7 +372,7 @@ ON CONFLICT(cache_key) DO UPDATE SET
             address: null,
             source: 'fallback',
             fallbackReason: lastFailure || 'all_fallbacks_failed',
-            provider: 'nominatim-public',
+            provider: 'photon-public',
         };
     }
 
@@ -348,6 +417,26 @@ ON CONFLICT(cache_key) DO UPDATE SET
         }
     }
 
+    private buildNominatimUserAgent(): string {
+        const contact = String(process.env.NOMINATIM_CONTACT_EMAIL ?? '').trim();
+        const contactSuffix = contact ? `; contact ${contact}` : '';
+        return `real-estate-analytics-dashboard/1.0 (reverse geocoder fallback${contactSuffix})`;
+    }
+
+    private async runNominatimThrottled<T>(fn: () => Promise<T>): Promise<T> {
+        const run = this.nominatimQueue.then(async () => {
+            const waitMs = Math.max(0, this.nominatimLastRequestAt + NOMINATIM_MIN_INTERVAL_MS - Date.now());
+            if (waitMs > 0) await new Promise(resolve => setTimeout(resolve, waitMs));
+            this.nominatimLastRequestAt = Date.now();
+            return fn();
+        });
+        this.nominatimQueue = run.then(
+            () => undefined,
+            () => undefined
+        );
+        return run;
+    }
+
     private async fetchNominatimAddress(lat: number, lng: number): Promise<{ address: string | null; reason: FallbackReason }> {
         const url = new URL('https://nominatim.openstreetmap.org/reverse');
         url.searchParams.set('format', 'jsonv2');
@@ -355,22 +444,73 @@ ON CONFLICT(cache_key) DO UPDATE SET
         url.searchParams.set('lon', String(lng));
         url.searchParams.set('accept-language', 'ru');
 
+        const requestOnce = async (): Promise<{ address: string | null; reason: FallbackReason; status: number | null }> => {
+            try {
+                const resp = await fetch(url.toString(), {
+                    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+                    headers: {
+                        'User-Agent': this.buildNominatimUserAgent(),
+                    },
+                });
+                if (!resp.ok) {
+                    const bodyText = await resp.text().catch(() => '');
+                    const reason: FallbackReason = resp.status === 429 ? 'rate_limited' : 'public_fallback_error';
+                    if (process.env.NODE_ENV !== 'production') {
+                        // eslint-disable-next-line no-console
+                        console.warn(
+                            `[reverse-geocode] nominatim status=${resp.status} reason=${reason} body="${summarizePayload(bodyText)}"`
+                        );
+                    }
+                    return { address: null, reason, status: resp.status };
+                }
+                const json = (await resp.json()) as unknown;
+                const address = parseNominatimAddress(json);
+                if (!address) return { address: null, reason: 'parse_error', status: resp.status };
+                return { address, reason: 'api-error', status: resp.status };
+            } catch {
+                return { address: null, reason: 'network_error', status: null };
+            }
+        };
+
+        return this.runNominatimThrottled(async () => {
+            let last = await requestOnce();
+            if (last.address) return { address: last.address, reason: last.reason };
+
+            for (const delayMs of NOMINATIM_429_RETRY_DELAYS_MS) {
+                if (last.status !== 429) break;
+                await new Promise(resolve => setTimeout(resolve, delayMs));
+                this.nominatimLastRequestAt = Date.now();
+                last = await requestOnce();
+                if (last.address) return { address: last.address, reason: last.reason };
+            }
+            return { address: null, reason: last.reason };
+        });
+    }
+
+    private async fetchPhotonAddress(lat: number, lng: number): Promise<{ address: string | null; reason: FallbackReason }> {
+        const url = new URL('https://photon.komoot.io/reverse');
+        url.searchParams.set('lat', String(lat));
+        url.searchParams.set('lon', String(lng));
+
         try {
-            const resp = await fetch(url.toString(), {
-                signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-                headers: {
-                    'User-Agent': 'real-estate-analytics-dashboard/1.0 (reverse geocoder fallback)',
-                },
-            });
+            const resp = await fetch(url.toString(), { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
             if (!resp.ok) {
-                return { address: null, reason: 'public_fallback_error' };
+                const bodyText = await resp.text().catch(() => '');
+                const reason: FallbackReason = resp.status === 429 ? 'rate_limited' : 'public_fallback_error';
+                if (process.env.NODE_ENV !== 'production') {
+                    // eslint-disable-next-line no-console
+                    console.warn(
+                        `[reverse-geocode] photon status=${resp.status} reason=${reason} body="${summarizePayload(bodyText)}"`
+                    );
+                }
+                return { address: null, reason };
             }
             const json = (await resp.json()) as unknown;
-            const address = parseNominatimAddress(json);
+            const address = parsePhotonAddress(json);
             if (!address) return { address: null, reason: 'parse_error' };
-            return { address, reason: 'public_fallback_error' };
+            return { address, reason: 'api-error' };
         } catch {
-            return { address: null, reason: 'public_fallback_error' };
+            return { address: null, reason: 'network_error' };
         }
     }
 

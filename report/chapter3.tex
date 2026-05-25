@@ -1,0 +1,1083 @@
+\section{Реализация программного комплекса}
+
+Во втором разделе описаны архитектура, модель данных и интерфейсы системы. Раздел посвящён программной реализации: Python-пайплайн сбора, серверное API на Node.js, общий слой правил в TypeScript и React-клиент. Каталоги \texttt{parser/}, \texttt{server/}, \texttt{shared/} и \texttt{src/} соответствуют архитектурным слоям системы.
+
+\newcounter{codelisting}
+\newcommand{\codelistingcaption}[1]{%
+  \refstepcounter{codelisting}%
+  \par\vspace{1.5\baselineskip}%
+  \nopagebreak[4]%
+  \begingroup\sloppy\raggedright\hbadness=10000\emergencystretch=3em
+  \noindent\textbf{Листинг~3.\arabic{codelisting}.} #1\par
+  \endgroup\vspace{0.8\baselineskip}%
+}
+
+% ---------------------------------------------------------------------------
+\subsection{Общая структура репозитория и сборка}
+% ---------------------------------------------------------------------------
+
+\subsubsection{Каталоги и назначение}
+
+Монорепозиторий \texttt{real-estate-analytics-dashboard} объединяет все компоненты аналитической системы. Корневой \texttt{package.json} описывает клиент (Vite~+~React) и скрипты запуска сервера; Python-парсер живёт в подкаталоге \texttt{parser/} со своим виртуальным окружением \texttt{parser/.venv} и файлом \texttt{requirements-parser.txt}.
+
+\begin{itemize}
+    \item \texttt{parser/} --- Selenium-парсер Яндекс.Недвижимость, ETL, QA, JSON-конфиги городов (\texttt{configs/}), артефакты сбора (\texttt{data/\{city\}/});
+    \item \texttt{server/} --- Express~5, SQLite (\texttt{app.db}), хранение датасетов по городам, запуск задач парсера, обратное геокодирование;
+    \item \texttt{shared/} --- типы, фильтры, профили городов, слияние строк; импортируется и сервером, и клиентом;
+    \item \texttt{src/} --- SPA дашборда: фильтры, Recharts, карта Yandex Maps, админ-панели.
+\end{itemize}
+
+Такое разделение позволяет независимо обновлять сбор данных (Python) и визуализацию (TypeScript), сохраняя единые правила фильтрации в \texttt{shared/}.
+
+\subsubsection{Скрипты npm и локальный запуск}
+
+Сборка и разработка orchestrated через npm-скрипты корневого манифеста (листинг~3.25). Команда \texttt{npm run dev:all} параллельно поднимает API (\texttt{tsx server/index.ts}, порт~3001) и Vite-dev-server клиента (порт~5173). Отдельно доступны \texttt{npm run build} (production-бандл), \texttt{npm run check:parser-configs} (валидация JSON-конфигов парсера) и \texttt{npm run dev:api} только для backend.
+
+Переменные окружения задаются в файле \texttt{.env} в корне репозитория: \texttt{JWT\_SECRET}, \texttt{YANDEX\_GEOCODER\_API\_KEY}, \texttt{VITE\_YANDEX\_MAPS\_API\_KEY}. Сервер при старте загружает их через \texttt{bootstrapEnv.ts}; без ключей карта и платный геокодер деградируют к публичным fallback-провайдерам (см.~листинг~3.14).
+
+\subsubsection{Python-окружение парсера}
+
+Парсер не требует глобальной установки пакетов: при первом запуске из админ-панели \texttt{parserRunner.ts} создаёт \texttt{parser/.venv} и выполняет \texttt{pip install -r requirements-parser.txt}. Альтернатива для ручной отладки --- \texttt{make moscow-links}, \texttt{make moscow-details} и аналоги в \texttt{parser/Makefile}, которые активируют venv и вызывают модули \texttt{pipeline.run\_*}.
+
+Клиентская часть собирается Vite с \texttt{@vitejs/plugin-react}. \texttt{tsconfig.json} задаёт paths \texttt{@/*}; серверный \texttt{tsx} резолвит \texttt{../shared/} без отдельной компиляции общего слоя.
+
+Конфигурация города --- JSON (\srce{parser/configs/config.moscow.json} и аналоги): URL сегментов, координаты, пути к CSV, Selenium, лимиты. \texttt{PipelineConfig} (листинг~3.1) загружает файл и собирает URL для стадии \emph{links}.
+
+\codelistingcaption{Загрузка конфигурации пайплайна (\srce{parser/pipeline/config.py})}
+\begin{singleminted}{python}
+@dataclass
+class PipelineConfig:
+    base_url: str
+    search_segments: list[str] | None
+    headless: bool
+    target_listings: int | None
+    links_file: str
+    details_file: str
+    processed_file: str
+    resume_details: bool
+    resume_after_captcha: bool
+    runtime_status_file: str
+    runtime_control_file: str
+    city_center_lat: float
+    city_center_lng: float
+    request_delays_ms: dict[str, dict[str, int]]
+
+    @staticmethod
+    def from_file(
+        path: str | Path,
+        *,
+        preset_override: str | None = None,
+    ) -> "PipelineConfig":
+        cfg_path = Path(path)
+        raw = json.loads(cfg_path.read_text(encoding="utf-8"))
+        raw = apply_preset(raw)
+        # ... загрузка search_segments и search_segments_file ...
+        return PipelineConfig(
+            base_url=raw.get("base_url", "https://realty.yandex.ru/..."),
+            headless=bool(raw.get("headless", True)),
+            resume_details=bool(raw.get("resume_details", True)),
+            city_center_lat=float(raw.get("city_center_lat", 51.533103)),
+            # ...
+        )
+
+    @property
+    def search_urls(self) -> list[str]:
+        urls: list[str] = []
+        if self.base_urls:
+            urls.extend(self.base_urls)
+        else:
+            urls.append(self.base_url)
+        if self.search_segments:
+            urls.extend(self.search_segments)
+        return _dedupe_urls(urls)
+\end{singleminted}
+\label{lst:pipeline-config}
+
+Фрагмент демонстрирует централизованное чтение JSON: все стадии получают один объект конфигурации, а \texttt{search\_urls} объединяет базовые URL и сегменты (для Москвы --- \srce{moscow_search_segments.json}).
+
+Для Москвы конфигурация включает двенадцать базовых URL плюс дополнительные сегменты из JSON. Параметр \texttt{max\_pages=150} ограничивает глубину пагинации; \texttt{target\_listings} останавливает сбор после нужного объёма.
+
+Артефакты сбора складываются в \srce{parser/data/moscow/} или \srce{parser/data/saratov/}: список ссылок, details CSV, \srce{processed_apartment_data.csv}, статистика парсинга.
+
+% ---------------------------------------------------------------------------
+\subsection{Реализация модуля парсера}
+% ---------------------------------------------------------------------------
+
+\subsubsection{Архитектура Python-пайплайна}
+
+Парсер --- цепочка CLI-модулей в \texttt{pipeline/}. Оркестратор \srce{run_pipeline.py} (листинг~3.6) вызывает \texttt{run\_links}, \texttt{run\_details}, \texttt{etl}, \texttt{qa\_report} через \texttt{subprocess}, обновляя \srce{.runtime_status.json}.
+
+Браузер обслуживают \srce{yandex_realty_advanced_parser.py} (список) и \srce{yandex_realty_details_parser.py} (карточки) на Selenium~4 с \texttt{webdriver-manager}.
+
+Details-парсер извлекает JSON-LD и поля «О доме», «Удобства», «Двор», нормализует число комнат и записывает геолокацию. Особое внимание уделено устойчивости записи и интеграции с сервером.
+
+\subsubsection{Стадия links: сбор URL карточек}
+
+Скрипт \texttt{pipeline/run\_links.py} (листинг~3.2) для каждого поискового сегмента из конфигурации создаёт экземпляр \texttt{YandexRealtyParser}, прокручивает выдачу, переключает страницы пагинации и дописывает уникальные ссылки в \texttt{yandex\_realty\_links.txt}. Между scroll, navigation и pagination действуют случайные паузы из блока \texttt{request\_delays\_ms.links}, что снижает частоту срабатывания антибот-защиты.
+
+При достижении \texttt{target\_listings} цикл по сегментам прерывается; если файл уже содержит достаточно ссылок, стадия завершается без запуска браузера. Callback \texttt{on\_status\_update} записывает в \texttt{.runtime\_status.json} поля \texttt{stage}, \texttt{done}, \texttt{total}, \texttt{statusMessage} --- их потребляет серверная задача парсера.
+
+\codelistingcaption{Точка входа стадии links (\srce{parser/pipeline/run_links.py})}
+\begin{singleminted}{python}
+def main() -> None:
+    cfg = PipelineConfig.from_file(args.config)
+    links_path = cfg.resolve(cfg.links_file)
+    runtime_status_path = cfg.resolve(cfg.runtime_status_file)
+    runtime_control_path = cfg.resolve(cfg.runtime_control_file)
+    clear_runtime_control(runtime_control_path)
+
+    p = links_parser.YandexRealtyParser(
+        headless=cfg.headless,
+        max_pages=cfg.max_pages,
+        target_listings=target_listings,
+        request_delays_ms=cfg.request_delays_ms.get("links"),
+    )
+    p.links_file = str(links_path)
+    p.should_resume = lambda: consume_runtime_resume(runtime_control_path)
+
+    def on_status(payload: dict[str, Any]) -> None:
+        write_runtime_status(runtime_status_path, {
+            "stage": "links",
+            "statusMessage": payload.get("statusMessage") or "Сбор ссылок",
+            **payload,
+        })
+    p.on_status_update = on_status
+
+    for idx, url in enumerate(cfg.search_urls, start=1):
+        if target_listings and current_count >= target_listings:
+            break
+        links_parser.BASE_URL = url
+        write_runtime_status(runtime_status_path, {
+            "stage": "links", "status": "running",
+            "step": f"Сегмент {idx}/{len(urls)}",
+        })
+        p.run()
+\end{singleminted}
+\label{lst:run-links}
+
+\subsubsection{Стадия details: извлечение атрибутов карточки}
+
+Модуль \texttt{yandex\_realty\_details\_parser.py} обходит список ссылок и из DOM извлекает цену, площади, адрес, координаты, параметры дома, удобства. Класс \texttt{DetailsStore} (\texttt{pipeline/details\_store.py}, листинг~3.3) обеспечивает \emph{безопасную} запись: промежуточный буфер \texttt{.tmp\_details\_output.csv}, атомарный merge в основной CSV, JSONL-журнал построчных результатов и резервные копии с суффиксом \texttt{.latest}. При \texttt{resume\_details=true} повторно обрабатываются только URL, отсутствующие в store --- это критично при сбоях сети или капче на тысячах карточек.
+
+\codelistingcaption{Безопасная запись details CSV (\srce{parser/pipeline/details_store.py})}
+\begin{singleminted}{python}
+def write_rows(path: Path, rows: List[Dict[str, str]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not rows:
+        raise RuntimeError(f"Отказ записи пустого CSV: {path}")
+
+    expected = unique_link_count(rows)
+    fieldnames = details_fieldnames(rows)
+    part = path.with_suffix(path.suffix + ".part")
+
+    with part.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+
+    written = count_links_in_file(part)
+    if written < expected:
+        part.unlink(missing_ok=True)
+        raise RuntimeError(
+            f"Запись оборвалась: ожидали {expected} строк, в part {written}"
+        )
+    part.replace(path)
+    # ... копия в .latest и jsonl ...
+\end{singleminted}
+\label{lst:details-store}
+
+Проверка \texttt{written < expected} защищает от «обнуления» файла при обрыве записи --- типичная проблема длительных сессий парсинга.
+
+\subsubsection{Обнаружение SmartCaptcha и возобновление}
+
+Яндекс периодически показывает SmartCaptcha. Парсер не пытается решать её автоматически: функция \texttt{should\_treat\_as\_captcha\_page} (листинг~3.4) анализирует URL, заголовок страницы и видимые DOM-маркеры, но \emph{игнорирует} скрытые iframe, если карточка объявления уже загружена --- это снижает ложные срабатывания (покрыто unit-тестами в \texttt{test\_captcha\_detection.py}).
+
+При подтверждённой капче метод \texttt{handle\_captcha} (листинг~3.5) переключает Chrome из headless в оконный режим, пишет статус \texttt{captcha\_required} в runtime JSON и ждёт действия пользователя. В неинтерактивном режиме (запуск из админ-панели) цикл опрашивает \texttt{.runtime\_control.json}: сервер по \texttt{POST /api/admin/parser/jobs/:id/resume} вызывает \texttt{request\_runtime\_resume}, Python --- \texttt{consume\_runtime\_resume} (листинг~3.7).
+
+\codelistingcaption{Детектор страницы капчи (\srce{parser/yandex_realty_details_parser.py})}
+\begin{singleminted}{python}
+def should_treat_as_captcha_page(
+    *,
+    url: str = "",
+    page_title: str = "",
+    offer_card_present: bool = False,
+    visible_captcha_marker: bool = False,
+) -> bool:
+    if offer_card_present and not url_indicates_captcha_page(url):
+        return False
+    if url_indicates_captcha_page(url):
+        return True
+    if page_title_indicates_captcha(page_title):
+        return True
+    return visible_captcha_marker
+\end{singleminted}
+\label{lst:captcha-detect}
+
+\codelistingcaption{Обработка капчи и resume-сигнала (\srce{parser/yandex_realty_details_parser.py})}
+\begin{singleminted}{python}
+def handle_captcha(self, url: str = "", link_index: int | None = None):
+    print("PARSER_PROGRESS_STATUS:captcha_required")
+    self.emit_status({"status": "captcha_required", "step": "Капча"})
+    if self.headless:
+        self.headless = False
+        self.recreate_driver("капча: нужно ручное решение")
+        if url:
+            self.driver.get(url)
+
+    if not self.interactive:
+        started = time.time()
+        while True:
+            if self.should_resume and self.should_resume():
+                print("Сигнал продолжения из UI.")
+            if not self.check_for_captcha():
+                self.emit_status({"status": "running", "step": "Капча решена"})
+                return True
+            if time.time() - started >= self.captcha_auto_wait_seconds:
+                self.emit_status({"status": "waiting_user", ...})
+            time.sleep(3)
+\end{singleminted}
+\label{lst:captcha-handle}
+
+\subsubsection{Стадия ETL: нормализация и производные признаки}
+
+Модуль \texttt{pipeline/etl.py} преобразует \texttt{yandex\_realty\_details.csv} в \texttt{processed\_apartment\_data.csv}, согласованный с \texttt{schema\_contract.json}. На входе --- «сырые» строки details; на выходе --- таблица, готовая для ingest на сервер и загрузки в дашборд.
+
+Ключевые шаги реализованы в функциях:
+\begin{itemize}
+    \item \texttt{to\_float}, \texttt{to\_int}, \texttt{parse\_rooms} --- приведение числовых полей и извлечение числа комнат из заголовка;
+    \item \texttt{sanitize\_address} --- удаление служебных фраз, координат вместо адреса, «загрязнённого» адреса офиса Яндекса на Садовнической (листинг~3.26);
+    \item \texttt{haversine\_km} --- расстояние до центра города из конфигурации;
+    \item \texttt{build\_row} --- расчёт цены за м², возраста дома, относительного этажа, бинарных признаков удобств;
+    \item \texttt{apply\_one\_hot} --- кодирование категорий через \texttt{categories.py} (санузел, окна, ремонт, тип дома).
+\end{itemize}
+
+Функция \texttt{build\_row} (листинг~3.8) связывает сырые и итоговые поля. Модуль \texttt{categories.py} задаёт \texttt{CATEGORY\_CLASSIFIERS}: для каждого текстового поля указана функция классификации; \texttt{apply\_one\_hot} (листинг~3.25) разворачивает категории в булевы колонки с префиксами \texttt{тип\_дома\_}, \texttt{ремонт\_} и др.
+
+После построения всех строк выполняется дедупликация по канонической ссылке или ID объявления: если одна карточка попала в details дважды (например, после resume), сохраняется последняя версия строки.
+
+\codelistingcaption{Очистка текстового адреса в ETL (\srce{parser/pipeline/etl.py})}
+\begin{singleminted}{python}
+def sanitize_address(raw) -> str:
+    if pd.isna(raw):
+        return ""
+    normalized = str(raw).strip().replace("\xa0", " ")
+    normalized = re.sub(
+        r"^(?:расположение|адрес)\s*[:\-]\s*", "", normalized, flags=re.I
+    ).strip(" \"'«»")
+    if NUMERIC_ONLY_RE.fullmatch(normalized):
+        return ""
+    if COORD_PAIR_RE.fullmatch(normalized):
+        return ""
+    if is_polluted_parser_address(normalized):
+        return ""
+    if not ADDRESS_HAS_LETTER_RE.search(normalized):
+        return ""
+    return normalized
+\end{singleminted}
+\label{lst:sanitize-address}
+
+\codelistingcaption{Построение строки processed CSV (\srce{parser/pipeline/etl.py})}
+\begin{singleminted}{python}
+def build_row(row, current_year, center_lat, center_lng, output_columns):
+    listing_id = extract_listing_id(row)
+    listing_link = normalize_listing_link(row.get("Ссылка"), listing_id)
+    price = to_float(row.get("Цена"))
+    area = to_float(row.get("Общая площадь"))
+    lat, lng = parse_geo(row.get("Геолокация"))
+    distance = (
+        haversine_km(lat, lng, center_lat, center_lng)
+        if lat is not None and lng is not None else None
+    )
+    price_per_m2 = (price / area) if price and area else None
+    floor_rel, first_floor, last_floor = parse_floor(
+        row.get("Этаж"), row.get("Этажей в доме")
+    )
+    location = sanitize_address(row.get("Расположение"))
+    out = {
+        "ID": listing_id,
+        "Расположение": location,
+        "Ссылка": listing_link,
+        "Цена": price,
+        "Широта": lat, "Долгота": lng,
+        "Расстояние до центра (км)": distance,
+        "Цена за м²": price_per_m2,
+        "Этаж_относительный": floor_rel,
+        "Первый_этаж": first_floor,
+        "Последний_этаж": last_floor,
+    }
+    apply_one_hot(out, row, output_columns)
+    return out
+\end{singleminted}
+\label{lst:etl-build-row}
+
+\subsubsection{Контроль качества (QA)}
+
+\texttt{pipeline/qa\_report.py} формирует отчёт о качестве итогового CSV: сверка с контрактом схемы (\texttt{validate\_schema}, листинг~3.22), доля пропусков в обязательных колонках, число дубликатов ссылок, заполненность координат. Контракт \texttt{schema\_contract.json} перечисляет \texttt{output\_columns} и \texttt{required\_core}; ETL и QA используют один и тот же файл, поэтому рассогласование схемы обнаруживается до попадания данных в дашборд.
+
+Результаты сохраняются в JSON и Markdown в каталоге данных города; при критических ошибках администратор видит их до ingest на сервер. Отчёт включает топ колонок по доле пропусков, счётчик строк с валидными широтой и долготой, предупреждение при заполненности ID ниже 95\%.
+
+\subsubsection{Оркестрация и файлы статуса}
+
+\codelistingcaption{Pipeline и обновление статуса (\srce{parser/pipeline/run_pipeline.py})}
+\begin{singleminted}{python}
+def run_step(module_name: str, config_path: str, *, target_listings=None) -> None:
+    cmd = [sys.executable, "-m", module_name, "--config", config_path]
+    if target_listings and module_name in {"pipeline.run_links", "pipeline.run_details"}:
+        cmd.extend(["--target-listings", str(target_listings)])
+    subprocess.run(cmd, check=True, env=os.environ.copy())
+
+def main() -> None:
+    cfg = PipelineConfig.from_file(config_abs)
+    if not args.skip_links:
+        write_runtime_status(runtime_status_path, {"stage": "links", "status": "running"})
+        run_step("pipeline.run_links", config_abs, target_listings=args.target_listings)
+    if not args.skip_details:
+        run_step("pipeline.run_details", config_abs, ...)
+    if not args.skip_etl:
+        run_step("pipeline.etl", config_abs)
+    if not args.skip_qa:
+        run_step("pipeline.qa_report", config_abs)
+\end{singleminted}
+\label{lst:run-pipeline}
+
+\codelistingcaption{Протокол resume через JSON (\srce{parser/pipeline/runtime_status.py})}
+\begin{singleminted}{python}
+def request_runtime_resume(path: Path) -> None:
+    current = _read_json(path)
+    current["resume_requested_at"] = now_iso()
+    path.write_text(json.dumps(current, ensure_ascii=False, indent=2), encoding="utf-8")
+
+def consume_runtime_resume(path: Path) -> bool:
+    current = _read_json(path)
+    stamp = current.get("resume_requested_at")
+    if not stamp:
+        return False
+    current["resume_requested_at"] = None
+    path.write_text(json.dumps(current, ensure_ascii=False, indent=2), encoding="utf-8")
+    return True
+\end{singleminted}
+\label{lst:runtime-resume}
+
+% ---------------------------------------------------------------------------
+\subsection{Реализация серверной части}
+% ---------------------------------------------------------------------------
+
+\subsubsection{Express-приложение и инициализация}
+
+Точка входа --- \texttt{server/index.ts}. При старте создаётся каталог \texttt{server/data/}, открывается SQLite с режимом WAL, выполняется миграция таблицы пользователей и seed-учётки (\texttt{admin}, \texttt{analyst}, \texttt{observer}, \texttt{manager}). Инициализируются \texttt{CityDatasetManager}, \texttt{ParserJobService} и \texttt{ReverseGeocoderService}.
+
+Маршруты сгруппированы по префиксам: \texttt{/api/auth/*}, \texttt{/api/dataset/*}, \texttt{/api/listings}, \texttt{/api/geocode/*}, \texttt{/api/admin/*}, \texttt{/api/manager/*}. Параметр \texttt{city=moscow|saratov} обязателен для операций с датасетом.
+
+Класс \texttt{CityDatasetManager} --- фасад над экземплярами \texttt{CityDatasetStore} (по одному на город). Метод \texttt{listCities()} возвращает метку, наличие данных и число строк. SQLite хранит пользователей, задачи парсера и кэш геокодера; объявления --- в JSON.
+
+\subsubsection{Аутентификация и авторизация}
+
+Аутентификация построена на JWT. Эндпоинт \texttt{POST /api/auth/login} (листинг~3.9) сравнивает пароль через \texttt{bcryptjs}, выдаёт токен на 12~часов. Middleware \texttt{authMiddleware} извлекает Bearer-токен; \texttt{requireRoles([...])} ограничивает admin-, analyst- и manager-эндпоинты.
+
+\codelistingcaption{JWT middleware и вход (\srce{server/index.ts})}
+\begin{singleminted}{typescript}
+function authMiddleware(req, res, next): void {
+    const auth = req.headers.authorization;
+    if (!auth?.startsWith('Bearer ')) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+    }
+    try {
+        const token = auth.slice(7);
+        const user = jwt.verify(token, JWT_SECRET) as AuthUser;
+        (req as AuthRequest).user = user;
+        next();
+    } catch {
+        res.status(401).json({ error: 'Invalid token' });
+    }
+}
+
+app.post('/api/auth/login', (req, res) => {
+    const row = db.prepare('SELECT ... FROM users WHERE username = ?').get(username);
+    if (!row || !bcrypt.compareSync(password, row.password_hash)) {
+        res.status(401).json({ error: 'Неверный логин или пароль' });
+        return;
+    }
+    const token = signToken({
+        id: row.id, username: row.username, role: row.role,
+    });
+    res.json({
+        token,
+        user: { id: row.id, username: row.username, role: row.role },
+    });
+});
+\end{singleminted}
+\label{lst:auth}
+
+\subsubsection{Хранение и ingest датасетов}
+
+Класс \texttt{CityDatasetStore} в \texttt{server/datasetStore.ts} управляет JSON-файлами \texttt{server/data/cities/\{cityId\}/dataset.json} и метаданными загрузок. Метод \texttt{ingestCsv} (листинг~3.10):
+\begin{enumerate}
+    \item разбирает текст CSV через PapaParse;
+    \item отфильтровывает строки с координатами за пределами радиуса города (\texttt{getCityDistanceLimitKm});
+    \item в режиме \texttt{replace} полностью заменяет датасет; в \texttt{append} --- сливает строки с одинаковым ID через \texttt{mergeTwoDatasetRows};
+    \item присваивает \texttt{batchId} для возможности отката партии.
+\end{enumerate}
+
+Эндпоинт \texttt{POST /api/admin/dataset/ingest-pipeline} импортирует готовый \texttt{processed\_apartment\_data.csv} из каталога парсера без ручной загрузки файла --- связующее звено между Python и Node.
+
+\codelistingcaption{Ingest CSV на сервере (\srce{server/datasetStore.ts})}
+\begin{singleminted}{typescript}
+ingestCsv(csvText: string, fileName: string, mode: UploadMode) {
+    const parsed = parseCsvText(csvText);
+    const filteredParsed = filterRowsTooFarFromCityCenter(
+        parsed.rows, this.cityProfile
+    );
+    const batchId = randomUUID();
+
+    if (mode === 'replace') {
+        const mergedRows = applyRowMerge({
+            rows: filteredParsed.rows,
+            summary: buildSummary(filteredParsed.rows),
+        }).state.rows;
+        const rows = tagRows(validatedRows.rows, batchId);
+        this.state = { rows, summary: buildSummary(rows) };
+        this.meta.uploads = [{ batchId, at, fileName, added: rows.length, ... }];
+    } else {
+        // append: mergeTwoDatasetRows по offer id
+    }
+    this.persist();
+    return { totalRows, added, skippedDuplicates, tooFarFiltered, ... };
+}
+\end{singleminted}
+\label{lst:ingest-csv}
+
+\subsubsection{Запуск парсера из Node.js}
+
+Модуль \texttt{parserRunner.ts} связывает админ-панель с Python. Функция \texttt{spawnParserJob} (листинг~3.11) выполняет preflight-валидацию конфига, разрешает интерпретатор Python (venv или bootstrap), формирует аргументы \texttt{-m pipeline.run\_*} и запускает \texttt{spawn} с перенаправлением stdout/stderr в лог задачи.
+
+Соответствие стадий модулям:
+\begin{itemize}
+    \item \texttt{links} $\rightarrow$ \texttt{pipeline.run\_links};
+    \item \texttt{details} $\rightarrow$ \texttt{pipeline.run\_details};
+    \item \texttt{flush} $\rightarrow$ \texttt{run\_details --flush-only};
+    \item \texttt{etl} $\rightarrow$ \texttt{pipeline.etl};
+    \item \texttt{pipeline} $\rightarrow$ \texttt{pipeline.run\_pipeline}.
+\end{itemize}
+
+Состояние job хранится в \texttt{parser\_jobs}. UI опрашивает \srce{GET /api/admin/parser/jobs/:id} и читает прогресс из \srce{.runtime_status.json}.
+
+Сервис \texttt{ParserJobService} регистрирует запуск: UUID, город, стадию, путь к логу, PID. \texttt{resumeCaptcha} пишет в \srce{.runtime_control.json} метку \texttt{resume\_requested\_at}. Отмена посылает SIGTERM дочернему процессу.
+
+Перед первым запуском для города выполняется \texttt{validateParserConfig}: проверяется существование JSON, соответствие URL маркерам города (\texttt{/moskva/}, \texttt{/saratov/}), число сегментов поиска и пути к артефактам. Ошибки preflight возвращаются в UI до spawn, что экономит время на «пустых» задачах с неверным конфигом.
+
+\codelistingcaption{Запуск Python-процесса парсера (\srce{server/parserRunner.ts})}
+\begin{singleminted}{typescript}
+export function spawnParserJob(cityId, stage, logPath, options?) {
+    const preflight = validateParserConfig(cityId);
+    if (!preflight.ok) {
+        return { error: preflight.errors.join('\n') };
+    }
+
+    const python = resolveParserPython(stage);
+    if (!python.ok) return { error: python.error };
+
+    const moduleName = STAGE_MODULE[stage]; // pipeline.run_links, ...
+    const args = ['-m', moduleName, '--config', configPath];
+    if (stage === 'flush') args.push('--flush-only');
+    if (targetListings != null) args.push('--target-listings', String(targetListings));
+
+    const child = spawn(python.pythonBin, args, {
+        cwd: PARSER_DIR,
+        env: { ...process.env, PYTHONPATH: PARSER_DIR },
+        stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    child.stdout?.pipe(logStream);
+    child.stderr?.pipe(logStream);
+    return { child, configPath };
+}
+\end{singleminted}
+\label{lst:parser-runner}
+
+\subsubsection{Обратное геокодирование}
+
+Сервис \texttt{ReverseGeocoderService} (\texttt{reverseGeocoder.ts}) по паре (широта, долгота) возвращает текстовый адрес. Цепочка провайдеров (листинг~3.12): in-memory кэш $\rightarrow$ SQLite $\rightarrow$ Yandex Geocoder API (ключ \texttt{YANDEX\_GEOCODER\_API\_KEY}) $\rightarrow$ публичный Yandex $\rightarrow$ Nominatim (OpenStreetMap). Ключ кэша формируется в \texttt{shared/reverseGeocodeKey.ts} с округлением координат до 5 знаков; TTL по умолчанию --- 14 суток.
+
+Ключи API получены в кабинете разработчика Яндекса (рис.~\ref{fig:yandex-api}, раздел~2): JavaScript API --- для карты на клиенте, Geocoder API --- для серверного кэша адресов.
+
+\codelistingcaption{Цепочка reverse geocode (\srce{server/reverseGeocoder.ts})}
+\begin{singleminted}{typescript}
+private async reverseWithCache(lat, lng, cacheKey) {
+    const dbRow = this.lookupCacheRow(cacheKey, lat, lng);
+    if (dbRow?.address && dbRow.expires_at > now) {
+        return { cacheKey, address: dbRow.address, source: 'cache', provider: 'cache' };
+    }
+    if (this.apiKey) {
+        const yandexWithKey = await this.fetchYandexAddress(lat, lng, this.apiKey);
+        if (yandexWithKey.address) {
+            this.saveCache(cacheKey, lat, lng, yandexWithKey.address);
+            return { ..., provider: 'yandex-key' };
+        }
+    }
+    const yandexWithoutKey = await this.fetchYandexAddress(lat, lng, null);
+    if (yandexWithoutKey.address) { ... provider: 'yandex-public' }
+
+    const nominatim = await this.fetchNominatimAddress(lat, lng);
+    if (nominatim.address) { ... provider: 'nominatim-public' }
+    return { cacheKey, address: null, source: 'fallback', ... };
+}
+\end{singleminted}
+\label{lst:reverse-geocode}
+
+% ---------------------------------------------------------------------------
+\subsection{Общий слой shared}
+% ---------------------------------------------------------------------------
+
+Каталог \texttt{shared/} --- единый источник правил для сервера и клиента. Дублирование логики фильтрации в двух языках привело бы к расхождению KPI на карте и в таблице; поэтому \texttt{rowPassesFiltersShared} вызывается и в \texttt{GET /api/listings}, и в \texttt{App.tsx}.
+
+\subsubsection{Профили городов}
+
+Файл \texttt{cities.ts} (листинг~3.13) задаёт идентификаторы \texttt{moscow} и \texttt{saratov}, координаты центра карты, лимит расстояния для очистки данных (120 и 100~км) и путь к JSON-конфигу парсера. Сервер и клиент импортируют одни и те же константы.
+
+\codelistingcaption{Профили городов (\srce{shared/cities.ts})}
+\begin{singleminted}{typescript}
+export const CITY_PROFILES: CityProfile[] = [
+    {
+        id: 'moscow',
+        label: 'Москва',
+        centerLat: 55.7558,
+        centerLng: 37.6176,
+        distanceMaxKm: 120,
+        parserConfig: 'parser/configs/config.moscow.json',
+    },
+    {
+        id: 'saratov',
+        label: 'Саратов',
+        centerLat: 51.533103,
+        centerLng: 46.034266,
+        distanceMaxKm: 100,
+        parserConfig: 'parser/configs/config.saratov.json',
+    },
+];
+
+export function getCityDistanceLimitKm(cityId?: string | null): number | null {
+    return getCityProfile(cityId)?.distanceMaxKm ?? null;
+}
+\end{singleminted}
+\label{lst:cities}
+
+\subsubsection{Единая фильтрация строк}
+
+Функция \texttt{rowPassesFiltersShared} (листинг~3.14) --- центральная точка отбора. Диапазон считается «активным» только если отличается от baseline summary (\texttt{isRangeFilterActive}): слайдер на полном диапазоне не отсекает данные. Проверяются цена, площадь, комнаты, год постройки, расстояние, тип дома, исключение первого/последнего этажа, радиус от центра (haversine при отсутствии колонки расстояния) и произвольные \texttt{additionalFilters}.
+
+\codelistingcaption{Общая функция фильтрации (\srce{shared/filters.ts})}
+\begin{singleminted}{typescript}
+export function rowPassesFiltersShared(row, filters, summary): boolean {
+    const c = summary.coreColumnMap;
+    const priceActive = isRangeFilterActive(filters.price, summary.price, 0.5);
+    const areaActive = isRangeFilterActive(filters.area, summary.area, 0.1);
+
+    if (c.price && priceActive) {
+        const v = row[c.price];
+        if (!isFiniteNumber(v)) return false;
+        if (v < filters.price.min || v > filters.price.max) return false;
+    }
+    if (c.rooms && filters.rooms.length > 0) {
+        const rounded = parseRoomCount(row[c.rooms]);
+        if (rounded == null || !filters.rooms.includes(rounded)) return false;
+    }
+    if (filters.radiusKm != null && c.distanceKm) {
+        const v = asNumber(row[c.distanceKm]);
+        if (!Number.isFinite(v) || v > filters.radiusKm) return false;
+    }
+    if (filters.excludeFirstFloor && c.firstFloor && asBool(row[c.firstFloor]))
+        return false;
+    // ... additionalFilters, houseTypes ...
+    return true;
+}
+\end{singleminted}
+\label{lst:filters}
+
+\subsubsection{Слияние строк датасета}
+
+При append или ingest строки с одним ID объявления объединяются модулем \texttt{mergeDatasetRows.ts} (листинг~3.15). Пустые поля заполняются из другой записи; HTTP-ссылка имеет приоритет. Типичный сценарий: одна выгрузка содержит координаты без ссылки, другая --- ссылку без координат; после merge строка пригодна и для карты, и для перехода на карточку.
+
+\codelistingcaption{Слияние строк по offer id (\srce{shared/mergeDatasetRows.ts})}
+\begin{singleminted}{typescript}
+export function mergeDatasetRows(rows: DataRow[]) {
+    const normalized = rows.map(normalizeDatasetRow);
+    const groups = new Map<string, DataRow[]>();
+
+    for (const row of normalized) {
+        const ids = offerIdsFromRow(row);
+        if (!ids.length) { noId.push(row); continue; }
+        const key = ids[0];
+        groups.get(key)?.push(row) ?? groups.set(key, [row]);
+    }
+
+    for (const group of groups.values()) {
+        if (group.length === 1) { merged.push(group[0]); continue; }
+        let acc = group[0];
+        for (let i = 1; i < group.length; i++) {
+            acc = mergeRowFields(acc, group[i]);
+        }
+        merged.push(acc);
+    }
+    return { rows: merged, stats: { inputRows, outputRows, mergedGroups, ... } };
+}
+\end{singleminted}
+\label{lst:merge-rows}
+
+% ---------------------------------------------------------------------------
+\subsection{Реализация клиентской части}
+% ---------------------------------------------------------------------------
+
+\subsubsection{Маршрутизация экранов без react-router}
+
+Корневой компонент \texttt{App.tsx} не использует react-router: экран выбирается по роли пользователя и фазе загрузки \texttt{loadPhase}. После входа manager видит \texttt{ManagerConsole}; admin при пустом городе --- \texttt{AdminSetupView}; analyst и observer --- основной дашборд после успешного \texttt{bootstrap}. Состояние \texttt{LoadPhase} явно кодирует ветвления: \texttt{pick-source}, \texttt{need-personal}, \texttt{server-empty}, \texttt{ready}.
+
+Тип \texttt{DataSourceMode} различает источник данных \texttt{server} и \texttt{personal}. Аналитик может переключаться между серверной выгрузкой города и локальным CSV; выбор сохраняется в \texttt{localStorage}. Роль \texttt{observer} принудительно использует сервер; \texttt{manager} не попадает на дашборд вовсе. Переключатель города \texttt{CitySwitcher} вызывает \texttt{loadServerDataset} с новым \texttt{cityId} без перезагрузки страницы.
+
+Функция \texttt{applyDataset} (листинг~3.16) --- центральный pipeline клиента: \texttt{mergeDatasetRows} $\rightarrow$ \texttt{applyListingQualityFilter} $\rightarrow$ пересчёт summary $\rightarrow$ восстановление фильтров и графиков из URL/localStorage. Фильтр качества отбрасывает строки без цены, без площади или с явно некорректными координатами --- последний барьер перед визуализацией, дублирующий часть проверок QA на стороне Python. Обновление обёрнуто в \texttt{startTransition}, чтобы UI оставался отзывчивым.
+
+\codelistingcaption{Применение загруженного датасета (\srce{src/App.tsx})}
+\begin{singleminted}{typescript}
+const applyDataset = useCallback((data, summary, fileKey) => {
+    const { rows: mergedRows } = mergeDatasetRows(data);
+    const mergedSummary = refreshSummaryFromData(mergedRows, summary);
+    const { rows: qualityRows } = applyListingQualityFilter(
+        mergedRows, mergedSummary
+    );
+    const refreshed = refreshSummaryFromData(qualityRows, mergedSummary);
+    const chosen = resolveDashboardStateForSummary(refreshed);
+    startTransition(() => {
+        setAllData(qualityRows);
+        setDataSummary(refreshed);
+        setFilters(chosen.filters);
+        setBaselineFilters(createDefaultFiltersFromSummary(refreshed));
+        setUserCharts(chosen.userCharts);
+        setLoadPhase('ready');
+    });
+}, [startTransition, caps]);
+\end{singleminted}
+\label{lst:apply-dataset}
+
+\subsubsection{Импорт CSV на клиенте}
+
+Модуль \texttt{src/utils/csvImport.ts} (листинг~3.17) разбирает файл через PapaParse, обрабатывает строки чанками по 400 с вызовом \texttt{yieldToMain()} (\texttt{setTimeout(0)}) между чанками --- main thread не блокируется при 10~000+ строк. Лимиты совпадают с сервером: 20~МБ, 50~000 строк. Fingerprint файла (имя, размер, дата изменения) кэшируется в \texttt{localStorage} через модуль \texttt{cache.ts}: повторное открытие того же CSV мгновенно восстанавливает таблицу без повторного PapaParse. При ошибке формата пользователь получает сообщение на русском языке --- это согласовано с серверными кодами 413 и текстами ошибок ingest.
+
+\codelistingcaption{Чанковый разбор CSV (\srce{src/utils/csvImport.ts})}
+\begin{singleminted}{typescript}
+const ROW_PROCESS_CHUNK = 400;
+
+async function processRawRows(rawData, columnOrder, houseTypeCols) {
+    const processed: DataRow[] = [];
+    for (let i = 0; i < rawData.length; i += ROW_PROCESS_CHUNK) {
+        const end = Math.min(i + ROW_PROCESS_CHUNK, rawData.length);
+        for (let j = i; j < end; j += 1) {
+            const out: DataRow = {};
+            for (const k of columnOrder) {
+                out[k] = normalizeCell(rawData[j][k]);
+            }
+            out.houseType = collectHouseType(rawData[j], houseTypeCols);
+            if (rowHasAnyValue(out)) processed.push(out);
+        }
+        if (end < rawData.length) await yieldToMain();
+    }
+    return processed;
+}
+\end{singleminted}
+\label{lst:csv-import}
+
+\subsubsection{Фильтры и отложенное обновление UI}
+
+Состояние фильтров хранится в \texttt{App.tsx} и передаётся в \texttt{FilterPanel}. Отфильтрованная выборка вычисляется в \texttt{useMemo}; для тяжёлых виджетов применяется \texttt{useDeferredValue(filters)} (листинг~3.18) --- KPI и графики обновляются с небольшой задержкой, поля ввода остаются отзывчивыми. Компонент \texttt{FilterPanel} предоставляет слайдеры диапазонов, чипы комнат и типов домов, переключатели «Искл.~1 этаж» / «Искл.~последний», а также конструктор дополнительных условий по произвольным колонкам (внешний вид --- рис.~\ref{fig:dashboard-filters}).
+
+\codelistingcaption{Deferred-фильтрация и подсчёт (\srce{src/App.tsx})}
+\begin{singleminted}{typescript}
+const deferredFilters = useDeferredValue(filters);
+const deferredUserCharts = useDeferredValue(userCharts);
+
+const filteredData = useMemo(() => {
+    if (!allData || !deferredFilters || !dataSummary) return [];
+    const out: DataRow[] = [];
+    for (const row of allData) {
+        if (rowPassesFilters(row, deferredFilters, dataSummary)) out.push(row);
+    }
+    return out;
+}, [allData, deferredFilters, dataSummary]);
+
+const deferredFilteredData = useDeferredValue(filteredData);
+const isChartUpdating =
+    isPending || deferredFilteredData !== filteredData;
+\end{singleminted}
+\label{lst:deferred-filters}
+
+\subsubsection{Динамическая сетка графиков}
+
+Компонент \texttt{DynamicChartGrid} строит гистограммы, scatter и bar chart по конфигурации \texttt{UserChartDefinition[]}. Перед отрисовкой для каждого типа графика проверяется «допустимость» столбца: модуль \texttt{chartColumnRules.ts} запрещает, например, scatter по категориальным one-hot полям или гистограмму по бинарным признакам \texttt{*\_есть}. Это предотвращает бессмысленные визуализации при конструкторе графиков.
+
+Sidebar \texttt{ChartSidebar} (analyst/admin) добавляет графики, меняет порядок drag-and-drop, экспортирует PNG и PDF. Состояние сериализуется в shareable URL вместе с фильтрами. Пример сетки графиков на дашборде --- рис.~\ref{fig:dashboard-main}.
+
+Scatter-графики используют равномерную подвыборку \texttt{sampleArray} (листинг~3.23) при большом числе точек на экран попадает не более \texttt{MAX\_SCATTER\_POINTS}, что сохраняет отзывчивость Recharts без потери формы облака.
+
+\subsubsection{Карта объектов}
+
+\texttt{ObjectsMap} загружает Yandex Maps JS API~2.1 через \texttt{yandexMapsLoader.ts}. Точки кластеризуются; лимит отображения настраивается (200--10~000, по умолчанию 2000). Точки дальше 400~км от центра города отбрасываются (листинг~3.19). Для balloon подставляется адрес из обратного геокодирования (рис.~\ref{fig:dashboard-map}).
+
+\codelistingcaption{Отбор точек для карты (\srce{src/components/ObjectsMap.tsx})}
+\begin{singleminted}{typescript}
+const MAX_DISTANCE_FROM_CITY_CENTER_KM = 400;
+
+function pointsFromRows(data, summary, coordsCache) {
+    const cityCenter = resolveCityCenter(summary);
+    for (const row of data) {
+        const listingUrl = mapListingLinkFromRow(row);
+        if (!listingUrl) continue;
+        const coords = coordsFromRow(row);
+        if (!coords) { missingCoords += 1; continue; }
+        if (cityCenter && haversineDistanceKm(coords, cityCenter)
+            > MAX_DISTANCE_FROM_CITY_CENTER_KM) {
+            tooFarFiltered += 1;
+            continue;
+        }
+        points.push({ lat: coords.lat, lng: coords.lng, listingUrl, ... });
+    }
+    return { points, rowsWithLink, missingCoords, tooFarFiltered };
+}
+\end{singleminted}
+\label{lst:objects-map}
+
+\subsubsection{Таблица, админ-панели и роли}
+
+\texttt{FilteredListingsTable} реализует клиентскую пагинацию поверх массива \texttt{filteredData}: сортировка по числовым и текстовым колонкам, выбор видимых полей, переход на карточку объявления по колонке «Ссылка». Для строк без текстового адреса, но с координатами, хук \texttt{useReverseGeocodeAddresses} асинхронно запрашивает адрес у сервера; прогресс отображается индикатором над таблицей (рис.~\ref{fig:dashboard-table}).
+
+\texttt{DashboardStats} агрегирует медианы цены, площади и числа комнат по текущему фильтру, дополняя их sparkline-мини-графиками. \texttt{SegmentComparison} держит два независимых набора \texttt{FilterSettings} и показывает KPI двух сегментов рынка рядом --- типичный сценарий «студии vs трёхкомнатные в пределах 5~км от центра» (рис.~\ref{fig:dashboard-segments}).
+
+Для роли \texttt{admin} блок «Обзор рынка» заменён на \texttt{AdminServerPanel} (upload CSV, ingest) и \texttt{AdminParserPanel} (задачи парсера, прогресс, resume после капчи) --- рис.~\ref{fig:admin-server},~\ref{fig:admin-parser}.
+
+Роль \texttt{manager} открывает \texttt{ManagerConsole}: обзор рынков и CRUD пользователей (рис.~\ref{fig:manager-markets},~\ref{fig:manager-users}). \texttt{observer} видит урезанный интерфейс без конструктора графиков и экспорта (рис.~\ref{fig:observer-dashboard}).
+
+\codelistingcaption{Загрузка датасета по API (\srce{src/App.tsx})}
+\begin{singleminted}{typescript}
+const loadServerDataset = useCallback(async (cityId, opts?) => {
+    if (!token) return;
+    if (!opts?.silent) setLoadPhase('loading');
+    try {
+        const metaResp = await fetchDatasetMeta(token, cityId);
+        if (metaResp) setServerMeta(metaResp.meta);
+        const boot = await fetchServerBootstrap(token, cityId);
+        if (!boot.ok) {
+            if (caps?.canViewAdminServerPanel) {
+                setLoadPhase('admin-setup');
+                return;
+            }
+            setLoadPhase('server-empty');
+            return;
+        }
+        applyDataset(boot.data.rows, boot.data.summary, null);
+    } catch {
+        setToast('Сервер недоступен — запустите npm run dev:api');
+        setLoadPhase('admin-setup');
+    }
+}, [token, applyDataset, caps]);
+\end{singleminted}
+\label{lst:load-server}
+
+\codelistingcaption{Фрагмент панели фильтров (\srce{src/components/FilterPanel.tsx})}
+\begin{singleminted}{typescript}
+const filtersDirty = useMemo(
+    () => isAnyFilterDirty(filters, baselineFilters),
+    [filters, baselineFilters]
+);
+
+const resetFilters = () => {
+    onFilterChange({
+        ...baselineFilters,
+        price: { ...baselineFilters.price },
+        area: { ...baselineFilters.area },
+        rooms: [...baselineFilters.rooms],
+        excludeFirstFloor: baselineFilters.excludeFirstFloor,
+        excludeLastFloor: baselineFilters.excludeLastFloor,
+        radiusKm: baselineFilters.radiusKm,
+    });
+};
+
+// onChange слайдера расстояния синхронизирует radiusKm с max диапазона
+onFilterChange({ ...filters, distanceKm: next, radiusKm: next.max });
+\end{singleminted}
+\label{lst:filter-panel}
+
+% ---------------------------------------------------------------------------
+\subsection{Алгоритмы визуализации и производительности}
+% ---------------------------------------------------------------------------
+
+\subsubsection{Биннинг гистограмм}
+
+Функция \texttt{buildHistogram} в \texttt{DynamicChartGrid.tsx} (листинг~3.20) делит значения на 20 интервалов (\texttt{HIST\_BINS = 20}). По умолчанию границы bins берутся по 2-му и 98-му перцентилям (\texttt{quantile}), чтобы выбросы не сжимали основную массу столбцов; крайние bin'ы аккумулируют «хвосты». В подписи указываются медиана и IQR. Пользователь может увеличить интервал (zoom), тогда пересчёт выполняется только по значениям внутри выбранного диапазона.
+
+\codelistingcaption{Гистограмма с перцентильными границами (\srce{src/components/DynamicChartGrid.tsx})}
+\begin{singleminted}{typescript}
+const HIST_BINS = 20;
+
+function buildHistogram(values: number[], zoom?) {
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const qLo = quantile(values, 0.02);
+    const qHi = quantile(values, 0.98);
+    const useCore = (qHi - qLo) > 0 && (qHi - qLo) < (max - min) * 0.95;
+    const binStart = useCore ? qLo : min;
+    const binEnd = useCore ? qHi : max;
+    const binSize = (binEnd - binStart || 1) / HIST_BINS;
+    const distribution = Array.from({ length: HIST_BINS }, (_, index) => ({
+        name: formatNumber(binStart + index * binSize),
+        count: 0,
+        range: getBinRange(binStart, binSize, index, HIST_BINS, binEnd),
+    }));
+    for (const value of values) {
+        let binIndex = value < binStart ? 0
+            : value > binEnd ? HIST_BINS - 1
+            : Math.floor((value - binStart) / binSize);
+        distribution[binIndex].count += 1;
+    }
+    return { distribution, analysis: `Медиана: ${median(values)}`, ... };
+}
+\end{singleminted}
+\label{lst:histogram}
+
+\subsubsection{Подвыборка scatter и кэширование}
+
+Для scatter-графиков функция \texttt{sampleArray} ограничивает число точек константой \texttt{MAX\_SCATTER\_POINTS} (1200), сохраняя равномерное покрытие диапазона --- иначе Recharts тормозит на десятках тысяч объектов. Аналогично \texttt{samplePointsWithinLimit} на карте равномерно прореживает маркеры при превышении пользовательского лимита.
+
+\subsubsection{Обратное геокодирование на клиенте}
+
+Клиент не вызывает Yandex для каждой строки: \texttt{useReverseGeocodeAddresses} отправляет ключи на \srce{GET /api/geocode/reverse} и \srce{POST /api/geocode/progress}, используя серверный SQLite-кэш.
+
+\subsubsection{Инструментирование и вспомогательные модули}
+
+В режиме \texttt{import.meta.env.DEV} компоненты логируют время фильтрации и построения гистограмм при превышении порога 4~мс. Ниже приведены вспомогательные фрагменты: npm-скрипты, проверка схемы QA, прореживание scatter, one-hot в ETL и загрузчик карт.
+
+\codelistingcaption{Скрипты npm (\srce{package.json})}
+\begin{singleminted}{json}
+{
+  "scripts": {
+    "dev": "vite",
+    "dev:api": "tsx server/index.ts",
+    "dev:all": "npm run dev:api & npm run dev",
+    "build": "vite build",
+    "check:parser-configs": "tsx server/validateParserConfigs.ts"
+  }
+}
+\end{singleminted}
+\label{lst:package-json}
+
+Команда \texttt{dev:all} поднимает API и клиент одновременно; \texttt{check:parser-configs} вызывается перед длительным сбором данных.
+
+\codelistingcaption{Валидация схемы в QA (\srce{parser/pipeline/qa_report.py})}
+\begin{singleminted}{python}
+def validate_schema(df, schema):
+    errors, warnings = [], []
+    required_core = schema.get("required_core", [])
+    for col in required_core:
+        if col not in df.columns:
+            errors.append(f"Обязательная колонка отсутствует: {col}")
+        elif df[col].isna().mean() > 0.15:
+            warnings.append(f"Доля пропусков в `{col}` > 15%.")
+    return errors, warnings
+\end{singleminted}
+\label{lst:qa-schema}
+
+Функция \texttt{validate\_schema} отделяет ошибки (нет обязательной колонки) от предупреждений (много пропусков).
+
+\codelistingcaption{Подвыборка для scatter (\srce{src/utils/sample.ts})}
+\begin{singleminted}{typescript}
+export const MAX_SCATTER_POINTS = 1200;
+
+export function sampleArray<T>(items: T[], limit: number): T[] {
+    if (items.length <= limit) return items;
+    const lastIndex = items.length - 1;
+    return Array.from({ length: limit }, (_, idx) => {
+        const sourceIndex = Math.floor((idx * lastIndex) / (limit - 1));
+        return items[sourceIndex];
+    });
+}
+\end{singleminted}
+\label{lst:sample-array}
+
+Равномерная подвыборка сохраняет форму облака точек при большом числе объявлений.
+
+\codelistingcaption{One-hot кодирование в ETL (\srce{parser/pipeline/etl.py})}
+\begin{singleminted}{python}
+def apply_one_hot(out, row, output_columns):
+    for prefix, (src_col, classify) in CATEGORY_CLASSIFIERS.items():
+        category = classify(row.get(src_col))
+        cols = one_hot_columns(prefix, output_columns)
+        for col in cols:
+            out[col] = False
+        target = f"{prefix}_{category}"
+        if target in cols:
+            out[target] = True
+\end{singleminted}
+\label{lst:one-hot}
+
+Категориальные признаки карточки превращаются в бинарные столбцы для фильтров дашборда.
+
+\codelistingcaption{Загрузка Yandex Maps API (\srce{src/utils/yandexMapsLoader.ts})}
+\begin{singleminted}{typescript}
+export function getYandexMapsApiKey(): string {
+    return (import.meta.env.VITE_YANDEX_MAPS_API_KEY ?? '').trim();
+}
+
+export function loadYandexMaps(apiKey: string): Promise<Ymaps21Global> {
+    const key = apiKey.trim();
+    if (!key) throw new Error('VITE_YANDEX_MAPS_API_KEY не задан');
+    return withTimeout(
+        loadYmaps21Script(key, DEFAULT_LOAD_TIMEOUT_MS),
+        DEFAULT_LOAD_TIMEOUT_MS,
+        'Yandex Maps'
+    );
+}
+\end{singleminted}
+\label{lst:yandex-maps-loader}
+
+Загрузчик проверяет наличие ключа из \texttt{.env} и ограничивает время ожидания скрипта API.
+
+\subsubsection{Согласованность контрактов между слоями}
+
+Сквозная согласованность данных обеспечивается несколькими «контрактами». JSON \texttt{schema\_contract.json} задаёт список колонок processed CSV и используется в ETL, QA и при построении \texttt{DataSummary} на сервере. Модуль \texttt{shared/dashboard.ts} описывает типы \texttt{DataRow}, \texttt{FilterSettings}, \texttt{DataSummary}; клиент импортирует их через алиас \texttt{@/types}, сервер --- напрямую из \texttt{../shared/}. Профили городов в \texttt{cities.ts} дублируют координаты центра из Python-конфига, чтобы расстояние до центра, рассчитанное в ETL, совпадало с радиусом фильтра на карте.
+
+Таблица~\ref{tab:layer-contracts} суммирует ключевые точки стыка слоёв.
+
+\begin{table}[htbp]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{|L{2.9cm}|L{5.5cm}|L{5.0cm}|}
+\hline
+\textbf{Стык} & \textbf{Артефакт} & \textbf{Назначение} \\
+\hline
+Parser $\rightarrow$ Server & \texttt{processed\_apartment\_\newline data.csv} & Ingest через admin API \\
+\hline
+Server $\rightarrow$ Client & \texttt{GET /api/dataset/\newline bootstrap} & JSON датасета и summary \\
+\hline
+Shared фильтры & \texttt{rowPassesFilters\newline Shared} & Единый срез таблицы и API \\
+\hline
+Runtime парсера & \texttt{.runtime\_status.\newline json} & Прогресс в AdminParserPanel \\
+\hline
+Геокодер & \texttt{reverse\_geocode\_cache} & Кэш адресов в SQLite \\
+\hline
+\end{tabular}
+\caption{Ключевые контракты между слоями программного комплекса}
+\label{tab:layer-contracts}
+\end{table}
+
+Такой подход позволяет заменить или масштабировать один слой --- например, перенести хранение датасета в PostgreSQL --- без переписывания фильтров и клиентских компонентов, если сохранить форму JSON bootstrap и summary.
+
+\subsubsection{Модульные тесты и smoke-проверки парсера}
+
+В каталоге \texttt{parser/pipeline/} собраны точечные тесты: \texttt{test\_captcha\_detection.py} проверяет чистую логику \texttt{should\_treat\_as\_captcha\_page} без запуска браузера; \texttt{test\_config\_presets.py} --- корректность пресетов задержек; \texttt{test\_write\_rows.py} --- атомарность \texttt{DetailsStore.write\_rows}. Скрипт \texttt{smoke\_test.py} выполняет короткий прогон links/details на малом лимите ссылок и используется перед демонстрацией системы.
+
+На стороне сервера команда \texttt{npm run check:parser-configs} обходит все города из \texttt{CITY\_PROFILES} и выводит ошибки конфигурации в консоль CI или локальной разработки. Таким образом, регрессии в путях к файлам или опечатки в URL сегментов обнаруживаются до запуска многочасового сбора.
+
+% ---------------------------------------------------------------------------
+\subsection{Развёртывание и эксплуатация}
+% ---------------------------------------------------------------------------
+
+Помимо локальной разработки, комплекс подготовлен к выкладке в сеть: статический фронтенд, API за reverse-proxy и автозапуск через systemd. Конфигурация и скрипты собраны в каталоге \texttt{deploy/}.
+
+\subsubsection{Режимы запуска}
+
+В ходе работы использовались три режима (табл.~\ref{tab:deploy-modes}).
+
+\begin{table}[htbp]
+\centering
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{|L{2.6cm}|L{3.4cm}|L{7.4cm}|}
+\hline
+\textbf{Режим} & \textbf{Команда} & \textbf{Назначение} \\
+\hline
+Разработка & \texttt{npm run dev:all} & Vite на порту 5173, API на 3001; прокси \texttt{/api} в \texttt{vite.config.ts} \\
+\hline
+Демонстрация по URL & \texttt{npm run dev:tunnel} & Production-сборка + \texttt{vite preview} на 3000, API на 3001, HTTPS-туннель (localtunnel по умолчанию) \\
+\hline
+Production на VPS & \texttt{deploy/setup.sh} & nginx отдаёт \texttt{dist/}, проксирует \texttt{/api} на Node.js, сервис systemd \\
+\hline
+\end{tabular}
+\caption{Режимы запуска программного комплекса}
+\label{tab:deploy-modes}
+\end{table}
+
+Команда \texttt{dev:all} применялась при отладке UI и API на одной машине. Для показа дашборда руководителю или проверки с мобильного устройства использовался сценарий \texttt{dev:tunnel}: скрипт \texttt{scripts/dev-with-tunnel.sh} собирает фронт (\texttt{npm run build}), поднимает \texttt{vite preview} и Express, затем пробрасывает порт наружу через localtunnel, Cloudflare Quick Tunnel или ngrok (переменная \texttt{TUNNEL\_PROVIDER}). Режим \texttt{TUNNEL\_SERVE=preview} выбран осознанно: dev-сервер Vite через туннель часто отдаёт 502 и белый экран, тогда как preview production-бандла работает стабильнее.
+
+\subsubsection{Production-сборка фронтенда}
+
+Сборка выполняется одной командой \texttt{npm run build}. Vite компилирует React-приложение в каталог \texttt{dist/}: минифицированный JS/CSS, \texttt{index.html}, ассеты. Переменные \texttt{VITE\_*} (\texttt{VITE\_YANDEX\_MAPS\_API\_KEY} и при необходимости \texttt{VITE\_API\_BASE\_URL}) \emph{вшиваются на этапе сборки}; после смены ключа карт требуется повторный \texttt{build}. Серверная часть (\texttt{tsx server/index.ts}) не компилируется отдельно --- на VPS запускается через \texttt{npm run start:api} с \texttt{NODE\_ENV=production}, что отключает отладочные эндпоинты.
+
+\subsubsection{Схема развёртывания на VPS}
+
+Итоговая схема на выделенном сервере (VPS Beget, Ubuntu~24.04) представлена на рис.~\ref{fig:deploy-vps}. Пользователь обращается к nginx по HTTP (порт~80); nginx отдаёт файлы из \texttt{dist/} и для путей \texttt{/api/} проксирует запросы на \texttt{127.0.0.1:3001}, где слушает Express. SQLite и JSON-датасеты остаются в \texttt{server/data/} на том же хосте; Python-парсер по-прежнему запускается subprocess из API при действиях администратора.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+    comp/.style={draw, rounded corners=2pt, align=center, minimum height=11mm, inner sep=4pt, font=\small},
+    arr/.style={-{Stealth[length=2.2mm]}, semithick},
+    lbl/.style={font=\scriptsize, fill=white, inner sep=1.5pt}
+]
+\node[comp, fill=blue!8] (user) {Браузер\\пользователя};
+\node[comp, fill=orange!10, below=10mm of user] (nginx) {nginx :80\\статика + proxy};
+\node[comp, fill=gray!10, below left=9mm and -8mm of nginx] (dist) {\texttt{dist/}\\SPA};
+\node[comp, fill=gray!10, below right=9mm and -8mm of nginx] (api) {Node.js API\\127.0.0.1:3001};
+\node[comp, fill=gray!10, below=8mm of api] (data) {SQLite + JSON\\ \texttt{server/data/}};
+\draw[arr] (user) -- node[right, lbl] {HTTP} (nginx);
+\draw[arr] (nginx) -| node[near start, above, lbl] {\texttt{/}} (dist);
+\draw[arr] (nginx) -| node[near start, above, lbl] {\texttt{/api}} (api);
+\draw[arr] (api) -- (data);
+\end{tikzpicture}
+\caption{Развёртывание на VPS: nginx, статика и API на одном сервере}
+\label{fig:deploy-vps}
+\end{figure}
+
+Конфигурация nginx (\texttt{deploy/nginx-dashboard.conf}) задаёт \texttt{root} на \texttt{dist/}, \texttt{try\_files} для SPA-маршрутизации и \texttt{proxy\_pass} на backend; лимит тела запроса \texttt{client\_max\_body\_size 25m} согласован с загрузкой CSV через admin API.
+
+\subsubsection{Автоматизация установки}
+
+Первичная настройка сервера выполняется скриптом \texttt{deploy/setup.sh} (запуск с \texttt{sudo} из корня репозитория). Скрипт последовательно:
+\begin{enumerate}
+    \item проверяет наличие \texttt{.env} (шаблон --- \texttt{deploy/env.production.example});
+    \item устанавливает Node.js~20 (через NodeSource), nginx и \texttt{build-essential} (нативная сборка \texttt{better-sqlite3});
+    \item выполняет \texttt{npm install} и \texttt{npm run build} с подгруженными переменными окружения;
+    \item размещает конфиг nginx в \texttt{/etc/nginx/sites-available/}, включает сайт, перезагружает nginx;
+    \item регистрирует unit \texttt{real-estate-dashboard.service} в systemd (\texttt{Restart=on-failure}, \texttt{EnvironmentFile=.env}) и запускает API.
+\end{enumerate}
+
+Перед установкой на сервер клонируется репозиторий (например, в \texttt{/var/www/real-estate-analytics-dashboard}), создаётся \texttt{.env} с \texttt{JWT\_SECRET}, \texttt{YANDEX\_GEOCODER\_API\_KEY} и \texttt{VITE\_YANDEX\_MAPS\_API\_KEY}. Переменная \texttt{SERVER\_NAME} передаётся в \texttt{setup.sh} и подставляется в \texttt{server\_name} nginx. \texttt{VITE\_API\_BASE\_URL} не задаётся: клиент и API доступны с одного IP/домена, запросы идут на относительный путь \texttt{/api}.
+
+\subsubsection{Ключи Яндекса и проверка после деплоя}
+
+После выкладки в кабинете разработчика Яндекса (рис.~\ref{fig:yandex-api}) для JavaScript API карт в список Referer добавляется адрес сервера, например \texttt{http://<IP>/*}. Без этого карта на production остаётся серой, хотя локально всё работает.
+
+Проверка на сервере:
+\begin{itemize}
+    \item \texttt{curl http://127.0.0.1/api/health} --- ответ JSON от API;
+    \item \texttt{curl -I http://127.0.0.1/} --- HTTP~200 и отдача \texttt{index.html};
+    \item \texttt{systemctl status real-estate-dashboard} --- активный unit systemd.
+\end{itemize}
+
+В браузере открывается главная страница дашборда; вход выполняется под seed-учётными записями (\texttt{observer}, \texttt{analyst}, \texttt{admin}). После первого входа рекомендуется сменить пароли.
+
+\subsubsection{Обновление версии}
+
+Обновление на VPS сводится к \texttt{git pull}, повторному \texttt{npm install} при изменении зависимостей, \texttt{npm run build} (с актуальным \texttt{.env}) и \texttt{systemctl restart real-estate-dashboard}. Статика в \texttt{dist/} подхватывается nginx без перезапуска; перезапуск нужен только API. Логи API: \texttt{journalctl -u real-estate-dashboard -f}.
+
+% ---------------------------------------------------------------------------
+\subsection{Выводы по третьему разделу}
+% ---------------------------------------------------------------------------
+
+В третьем разделе описана программная реализация комплекса на уровне исходного кода:
+\begin{enumerate}
+    \item Python-пайплайн на Selenium с поэтапным сбором ссылок и карточек, ETL по контракту схемы, QA-отчётами и возобновлением после SmartCaptcha через JSON-файлы \texttt{.runtime\_status.json} и \texttt{.runtime\_control.json};
+    \item Express-сервер с JWT-авторизацией по ролям, ingest JSON-датасетов по городам, spawn Python-парсера с bootstrap venv и многоуровневым обратным геокодированием с кэшем SQLite;
+    \item общий слой \texttt{shared/}, исключающий расхождение правил фильтрации, профилей городов и слияния строк между клиентом и API;
+    \item React-клиент с отложенной фильтрацией (\texttt{useDeferredValue}), чанковым CSV-импортом, настраиваемыми графиками Recharts с перцентильным биннингом и картой на API Яндекса с кластеризацией и лимитом точек;
+    \item сценарии развёртывания: локальная разработка, демонстрация через HTTPS-туннель и production на VPS (nginx + systemd) с автоматизированной установкой из каталога \texttt{deploy/}.
+\end{enumerate}
+
+Каждый слой имеет чёткую точку входа, конфигурацию и наблюдаемый статус выполнения.

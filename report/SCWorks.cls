@@ -357,7 +357,7 @@
 \captionsetup[figure]{name=\CYRR\cyri\cyrs\cyru\cyrn\cyro\cyrk, labelsep=endash,
                 justification=centering, font={small}, skip=\abovecaptionskip, position=below}
 \captionsetup[table]{name=\CYRT\cyra\cyrb\cyrl\cyri\cyrc\cyra, labelsep=endash, format=plain,
-                justification=centering, singlelinecheck=false, font={small}, position=top}
+                justification=centering, singlelinecheck=false, font={small}, position=below}
 
 % --------------------------------------------------------------------------%
 % Table of contents
@@ -1118,8 +1118,12 @@ itemsep=0pt%\parsep
 \newenvironment{singleminted}[2][]{%
     \VerbatimEnvironment%
     \begin{spacing}{1}%
-    \begin{minted}[style=default, #1]{#2}%
+    \noindent\begin{minipage}{\linewidth}%
+    \vspace{0.5\baselineskip}%
+    \begin{minted}[style=default, breaklines=true, breakanywhere=true, fontsize=\small, linenos=false, obeytabs=true, tabsize=4, #1]{#2}%
 }{%
     \end{minted}%
+    \end{minipage}%
+    \par\vspace{2.2\baselineskip}%
     \end{spacing}%
 }

@@ -39,7 +39,7 @@ function hasHttpLink(row: DataRow): boolean {
     return s.startsWith('http://') || s.startsWith('https://');
 }
 
-function sanitizeAddressValue(value: unknown): string | null {
+export function sanitizeAddressValue(value: unknown): string | null {
     if (value == null) return null;
     if (typeof value === 'number') return null;
     const normalized = String(value).trim();

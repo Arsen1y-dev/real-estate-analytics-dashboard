@@ -246,13 +246,14 @@ function filterInvalidProductRows(rows: DataRow[]): { rows: DataRow[]; droppedIn
 
 function applyRowMerge(state: DatasetState): { state: DatasetState; changed: boolean } {
     const { rows, stats } = mergeDatasetRows(state.rows);
+    const nextState = { rows, summary: buildSummary(rows) };
     const changed =
         stats.outputRows !== stats.inputRows ||
         stats.mergedGroups > 0 ||
         stats.linksFilledOnCoordRows > 0 ||
-        stats.coordsFilledOnLinkRows > 0;
-    if (!changed) return { state, changed: false };
-    return { state: { rows, summary: buildSummary(rows) }, changed: true };
+        stats.coordsFilledOnLinkRows > 0 ||
+        JSON.stringify(state.rows) !== JSON.stringify(rows);
+    return { state: nextState, changed };
 }
 
 export function parseCsvText(csvText: string): { rows: DataRow[]; summary: DataSummary } {

@@ -34,9 +34,21 @@
 
 API по умолчанию на порту **3001**, Vite dev-сервер на **3000** с proxy `/api` → `3001`.
 
-### Парсер
+### Парсер (Python)
 
-Python 3 + Selenium 4, pandas 2. Подробности — в секции [«Парсер»](#парсер) ниже.
+| Технология | Версия | Назначение |
+|------------|--------|------------|
+| Python | 3.10+ | runtime пайплайна |
+| Selenium | ≥4.20 | headless Chrome, парсинг карточек |
+| webdriver-manager | ≥4.0 | автозагрузка ChromeDriver |
+| pandas | ≥2.0 | ETL, нормализация CSV под дашборд |
+| Google Chrome / Chromium | системный | браузер для Selenium |
+| dash | ≥2.16 | вспомогательные скрипты (не в основном UI) |
+| plotly | ≥5.20 | вспомогательные скрипты (не в основном UI) |
+
+Зависимости: `parser/requirements-parser.txt`. Окружение: `python3 -m venv parser/.venv` + `pip install -r parser/requirements-parser.txt`.
+
+Стадии: **links** → **details** → **etl** → ingest на сервер. Запуск из UI (роль `admin`) или CLI — см. [«Парсер»](#парсер).
 
 ### Общий код
 

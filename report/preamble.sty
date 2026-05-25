@@ -2,6 +2,9 @@
 \usepackage[utf8]{inputenc}
 \usepackage[english,russian]{babel}
 \usepackage{graphicx}
+\graphicspath{{images/}}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning, shapes.multipart, fit, calc}
 \usepackage[sort,compress]{cite}
 \usepackage{amsmath}
 \usepackage{amssymb}
@@ -9,10 +12,49 @@
 \usepackage{fancyvrb}
 \usepackage{longtable}
 \usepackage{array}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\usepackage{fvextra}
 \usepackage{minted}
+\usepackage{xurl}
 \usepackage{tempora}
 \usepackage[hidelinks]{hyperref}
 
+\urlstyle{tt}
+
+\newcommand{\srce}[1]{\begingroup\urlstyle{tt}\nolinkurl{#1}\endgroup}
+
+% Скриншот дашборда: \screenshot[ширина]{метка}{имя-файла}{подпись}
+% Файл кладётся в report/images/{имя-файла}.png
+\newcommand{\screenshot}[4][0.92]{%
+  \begin{figure}[htbp]%
+  \centering
+  \IfFileExists{images/#3.png}{%
+    \includegraphics[width=#1\textwidth]{#3}%
+  }{%
+    \fbox{%
+      \begin{minipage}{#1\textwidth}%
+      \centering
+      \vspace{2.8cm}
+      {\small\textit{Место для скриншота}}\\[0.6ex]
+      {\footnotesize\ttfamily images/#3.png}\\[0.4ex]
+      {\scriptsize #4}
+      \vspace{2.8cm}
+      \end{minipage}%
+    }%
+  }%
+  \caption{#4}%
+  \label{fig:#2}%
+  \end{figure}%
+}
+
 \setminted{
-    fontsize=\normalsize,
+    breaklines=true,
+    breakanywhere=true,
+    fontsize=\small,
+    linenos=false,
+    xleftmargin=0pt,
+    xrightmargin=0pt,
+    obeytabs=true,
+    tabsize=4,
+    framesep=1.5mm,
 }

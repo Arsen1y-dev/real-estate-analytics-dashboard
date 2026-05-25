@@ -1,0 +1,44 @@
+% Полные тексты исходных файлов (дублируют фрагменты листингов раздела~3).
+% VerbatimInput вместо minted: иначе pdfTeX исчерпывает пул строк (~10k строк кода).
+
+\newcommand{\appendixfile}[2]{%
+  \section{#1}%
+  \vspace{0.4\baselineskip}%
+  \noindent{\small\srce{#2}}\par
+  \vspace{0.6\baselineskip}%
+  \begin{spacing}{0.92}%
+  \begingroup
+  \fvset{breaklines=true,breakanywhere=true,fontsize=\scriptsize,formatcom=\scriptsize\ttfamily}%
+  \VerbatimInput{#2}%
+  \endgroup
+  \par\vspace{1.2\baselineskip}%
+  \end{spacing}%
+}
+
+\appendixfile{Конфигурация пайплайна (config.py)}{../parser/pipeline/config.py}
+\appendixfile{Стадия links (run\_links.py)}{../parser/pipeline/run_links.py}
+\appendixfile{Хранилище details CSV (details\_store.py)}{../parser/pipeline/details_store.py}
+\appendixfile{Парсер карточек объявлений (yandex\_realty\_details\_parser.py)}{../parser/yandex_realty_details_parser.py}
+\appendixfile{Модуль ETL (etl.py)}{../parser/pipeline/etl.py}
+\appendixfile{Оркестратор pipeline (run\_pipeline.py)}{../parser/pipeline/run_pipeline.py}
+\appendixfile{Runtime-статус и resume (runtime\_status.py)}{../parser/pipeline/runtime_status.py}
+\appendixfile{Отчёт QA (qa\_report.py)}{../parser/pipeline/qa_report.py}
+
+\appendixfile{Точка входа Express API (index.ts)}{../server/index.ts}
+\appendixfile{Хранение и ingest датасетов (datasetStore.ts)}{../server/datasetStore.ts}
+\appendixfile{Запуск Python-парсера (parserRunner.ts)}{../server/parserRunner.ts}
+\appendixfile{Обратное геокодирование (reverseGeocoder.ts)}{../server/reverseGeocoder.ts}
+
+\appendixfile{Профили городов (cities.ts)}{../shared/cities.ts}
+\appendixfile{Фильтрация строк (filters.ts)}{../shared/filters.ts}
+\appendixfile{Слияние строк датасета (mergeDatasetRows.ts)}{../shared/mergeDatasetRows.ts}
+
+\appendixfile{Корневой компонент приложения (App.tsx)}{../src/App.tsx}
+\appendixfile{Импорт CSV на клиенте (csvImport.ts)}{../src/utils/csvImport.ts}
+\appendixfile{Панель фильтров (FilterPanel.tsx)}{../src/components/FilterPanel.tsx}
+\appendixfile{Сетка графиков (DynamicChartGrid.tsx)}{../src/components/DynamicChartGrid.tsx}
+\appendixfile{Карта объектов (ObjectsMap.tsx)}{../src/components/ObjectsMap.tsx}
+\appendixfile{Подвыборка для scatter (sample.ts)}{../src/utils/sample.ts}
+\appendixfile{Загрузчик Yandex Maps API (yandexMapsLoader.ts)}{../src/utils/yandexMapsLoader.ts}
+
+\appendixfile{Манифест npm (package.json)}{../package.json}

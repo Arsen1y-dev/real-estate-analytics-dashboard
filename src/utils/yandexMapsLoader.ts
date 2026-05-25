@@ -20,7 +20,7 @@ export interface Ymaps21Global {
             hintContent?: string;
         },
         options?: { preset?: string },
-    ) => unknown;
+    ) => Ymaps21Placemark;
     templateLayoutFactory: {
         createClass: (
             template: string,
@@ -45,6 +45,18 @@ export interface Ymaps21Global {
         bounds: {
             fromPoints: (points: number[][]) => number[][];
         };
+    };
+}
+
+export interface Ymaps21Placemark {
+    properties: {
+        set: (props: {
+            balloonContentBody?: string;
+            balloonContentHeader?: string;
+            balloonContentFooter?: string;
+            clusterCaption?: string;
+            hintContent?: string;
+        }) => void;
     };
 }
 

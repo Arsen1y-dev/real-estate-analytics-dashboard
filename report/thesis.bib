@@ -1,91 +1,227 @@
-% Пример оформления библиографии для ugost2003
-
-% Книга
-% Необходимые поля:
-% - Название (title)
-% - Автор(ы) (author, разделяются c помощью "and")
-% - Город издательства (address)
-% - Наименование издательства (publisher)
-% - Год издания (year)
-% - Общее кол-во страниц (numpages, опционально, либо везде ставить, либо нет)
-% Пример оформления русской книги
-@book{henrick2017ml,
-  title      = {Машинное обучение},
-  author     = {Хенрик, Б. and Джозеф, Р. and Марк, Ф.},
-  publisher  = {Издательский дом Питер},
-  address    = {Санкт"=Петербург},
-  year       = {2017},
-  language   = {russian}  
-}
-
-% Пример оформления английской книги
-@book{human_earing,
-  title     = {Auditory Neuroscience: Making sense of sound},
-  author    = {Schnupp, Jan and Nelken, Israel--Junior and King, Andrew},
-  publisher = {MIT press},
-  address   = {New York},
-  year      = {2011},
-}
-
-
-% Статья
-% Необходимые поля:
-% - Название статьи (title)
-% - Автор(ы) (author, разделяются c помощью "and")
-% - Название журнала (journal)
-% - Идентификационные данные (хотя бы одно из):
-%   - Том (volume)
-%   - Номер (number)
-%   - Выпуск
-% - Год издания (year)
-% - Страницы (диапазон в журнале) (pages)
-%     Замеч.: страницы всегда оформляются интервалом даже если статья на одну страницу
-
-% Пример оформления статьи на английском языке
-@article{attention,
-  title    = {Attention is all you need},
-  author   = {Vaswani, Ashish and Shazeer, Noam and Parmar, Niki and Uszkoreit, Jakob and Jones, Llion and Gomez, Aidan N and Kaiser, {\L}ukasz and Polosukhin, Illia},
-  journal  = {Advances in neural information processing systems},
-  volume   = {30},
-  number   = {2},
-  pages    = {14--14},
-  year     = {2017}
-}
-
-% Пример оформления статьи на русском языке
-@article{classification_sound,
-  title        = {Классификация музыкальных композиций по исполнителям на основе машинного обучения},
-  author       = {Н. С. Лысенко and Т. А. Приходько},
-  journal      = {Прикладная математика: современные проблемы математики, информатики и моделирования},
-  volume       = {2},
-  pages        = {121--227},
-  year         = {2020},
-  language     = {russian}
-}
-
-% Электронный ресурс
-% Необходимые поля:
-% - URL (url)
-% - Заголовок с экрана (title)
-% - Дата обращения (urldate, не позднее официальной даты сдачи работы)
-% - Язык заголовка с экрана (note)
-% Для электронных ресурсов лучше оставлять language = {russian}
-% вне зависимости от реального языка источника
-
-% Пример оформления электронного источника на английском языке
-@online{docker-docs,
-  title={Docker Docs},
-  url = {https://docs.docker.com/},
-  urldate = {27.05.2023},
-  note = {Загл. с экр. Яз. англ.},
+@article{soboleva2023,
+  title    = {Компьютерные технологии анализа рынка недвижимости},
+  author   = {Соболева, И.~А. and Осипов, Ф.~Л. and Соболева, Н.~В.},
+  journal  = {Наука Красноярья},
+  volume   = {12},
+  number   = {3-3},
+  pages    = {12--17},
+  year     = {2023},
   language = {russian}
 }
 
-% Пример оформления электронного источника на русском языке
-@online{fkn,
-  title = {Курс <<Машинное обучение>> на ФКН ВШЭ},
-  url = {https://github.com/esokolov/ml-course-hse},
-  urldate = {25.05.2024},
-  note = {Загл. с экр. Яз. рус.},
+@article{belyaev2015,
+  title    = {Использование интеллектуального анализа данных для выявления закономерностей формирования характеристик объектов недвижимости},
+  author   = {Беляев, В.~В.},
+  journal  = {Современные аспекты экономики},
+  number   = {12(220)},
+  pages    = {20--24},
+  year     = {2015},
+  language = {russian}
+}
+
+@inproceedings{filatov2013,
+  title     = {Разработка Web-приложения для статистического анализа данных},
+  author    = {Филатов, А.~А. and Осипенко, Н.~Б.},
+  booktitle = {Новые математические методы и компьютерные технологии в проектировании, производстве и научных исследованиях : материалы XVI Республиканской научной конференции студентов и аспирантов},
+  publisher = {ГГУ им. Ф. Скорины},
+  address   = {Гомель},
+  pages     = {193--194},
+  year      = {2013},
+  language  = {russian}
+}
+
+@inproceedings{nesterov2024,
+  title     = {Разработка веб-приложений с применением современных технологий},
+  author    = {Нестеров, К.~А.},
+  booktitle = {Радиоэлектроника, электротехника и энергетика : тезисы докладов тридцатой международной научно-технической конференции},
+  publisher = {ООО <<Центр полиграфических услуг <<РАДУГА>>},
+  address   = {Москва},
+  pages     = {377},
+  year      = {2024},
+  language  = {russian}
+}
+
+@incollection{ahtimirov2024,
+  title     = {Разработка веб-приложения для статистического анализа данных},
+  author    = {Ахтимиров, П.~В. and others},
+  booktitle = {Сборник научных трудов молодых ученых и специалистов},
+  publisher = {Чувашский государственный университет имени И.~Н.~Ульянова},
+  address   = {Чебоксары},
+  pages     = {169--173},
+  year      = {2024},
+  language  = {russian}
+}
+
+@incollection{filimonova2024,
+  title     = {Разработка веб-приложения для статистического анализа данных},
+  author    = {Филимонова, А.~В. and others},
+  booktitle = {Информатика и вычислительная техника : сборник научных трудов},
+  publisher = {Чувашский государственный университет им. И.~Н.~Ульянова},
+  address   = {Чебоксары},
+  pages     = {405--409},
+  year      = {2024},
+  language  = {russian}
+}
+
+@inproceedings{sultanov2022,
+  title     = {Разработка web приложения с использованием библиотеки react и node},
+  author    = {Султанов, А.~А.},
+  booktitle = {Студент: наука, профессия, жизнь : материалы IX всероссийской студенческой научной конференции},
+  publisher = {Омский государственный университет путей сообщения},
+  address   = {Омск},
+  pages     = {175--178},
+  year      = {2022},
+  language  = {russian}
+}
+
+@book{mckinney2023,
+  title     = {Python и анализ данных: первичная обработка данных с применением pandas, NumPy и Jupiter},
+  author    = {Маккинни, У.},
+  translator = {Слинкин, А.~А.},
+  edition   = {3},
+  publisher = {ДМК Пресс},
+  address   = {Москва},
+  year      = {2023},
+  numpages  = {538},
+  language  = {russian}
+}
+
+@online{w3schools-numpy,
+  title    = {Руководство по NumPy на сайте W3Schools},
+  url      = {https://www.w3schools.com/python/numpy_intro.asp},
+  urldate  = {25.05.2026},
+  note     = {Загл. с экр. Яз. англ.},
+  language = {russian}
+}
+
+@online{coursera-python,
+  title    = {Introduction to Data Science in Python. Курс от Университета Мичигана на платформе Coursera},
+  url      = {https://www.coursera.org/learn/python-data-analysis},
+  urldate  = {25.05.2026},
+  note     = {Загл. с экр. Яз. англ.},
+  language = {russian}
+}
+
+@online{habr-bigdata,
+  title    = {Python и большие данные: как учёные превращают числа в ценную информацию},
+  url      = {https://habr.com/ru/articles/196980/},
+  urldate  = {25.05.2026},
+  note     = {Загл. с экр. Яз. рус.},
+  language = {russian}
+}
+
+@book{vanderplas2023,
+  title     = {Python Data Science Handbook: Essential Tools for Working with Data},
+  author    = {VanderPlas, Jake},
+  edition   = {2},
+  publisher = {O'Reilly Media},
+  address   = {USA},
+  year      = {2023},
+  numpages  = {590},
+  language  = {english}
+}
+
+@online{beautifulsoup,
+  title    = {Beautiful Soup Documentation},
+  url      = {https://beautiful-soup-4.readthedocs.io/en/latest/},
+  urldate  = {25.05.2026},
+  note     = {Загл. с экр. Яз. англ.},
+  language = {russian}
+}
+
+@online{selenium,
+  title    = {Selenium Documentation},
+  url      = {https://www.selenium.dev/documentation/},
+  urldate  = {25.05.2026},
+  note     = {Загл. с экр. Яз. англ.},
+  language = {russian}
+}
+
+@book{demidova2022,
+  title     = {Разведочный анализ данных. Python: учебно-методическое пособие},
+  author    = {Демидова, Л.~А.},
+  publisher = {РТУ МИРЭА},
+  address   = {Москва},
+  year      = {2022},
+  numpages  = {107},
+  language  = {russian}
+}
+
+@book{grus2021,
+  title     = {Data Science. Наука о данных с нуля},
+  author    = {Грас, Джоэл},
+  translator = {Логунов, А.},
+  edition   = {2},
+  publisher = {БХВ-Петербург},
+  address   = {Санкт-Петербург},
+  year      = {2021},
+  numpages  = {416},
+  language  = {russian}
+}
+
+@book{monarch2022,
+  title     = {Машинное обучение с участием человека},
+  author    = {Монарх, Р.},
+  translator = {Бахура, В.~И.},
+  publisher = {ДМК Пресс},
+  address   = {Москва},
+  year      = {2022},
+  numpages  = {498},
+  language  = {russian}
+}
+
+@online{python312,
+  title    = {Разбор нового релиза Python 3.12 и его возможностей},
+  url      = {https://habr.com/ru/companies/ruvds/articles/796885/},
+  urldate  = {25.05.2026},
+  note     = {Загл. с экр. Яз. рус.},
+  language = {russian}
+}
+
+@online{react,
+  title    = {React. Официальная документация},
+  url      = {https://react.dev/},
+  urldate  = {25.05.2026},
+  note     = {Загл. с экр. Яз. англ.},
+  language = {russian}
+}
+
+@online{typescript,
+  title    = {TypeScript. Официальная документация},
+  url      = {https://www.typescriptlang.org/docs/},
+  urldate  = {25.05.2026},
+  note     = {Загл. с экр. Яз. англ.},
+  language = {russian}
+}
+
+@online{vite,
+  title    = {Vite. Официальная документация},
+  url      = {https://vitejs.dev/guide/},
+  urldate  = {25.05.2026},
+  note     = {Загл. с экр. Яз. англ.},
+  language = {russian}
+}
+
+@online{recharts,
+  title    = {Recharts. A composable charting library built on React components},
+  url      = {https://recharts.org/},
+  urldate  = {25.05.2026},
+  note     = {Загл. с экр. Яз. англ.},
+  language = {russian}
+}
+
+@online{papaparse,
+  title    = {Papaparse. The powerful, in-browser CSV parser for the browser},
+  url      = {https://www.papaparse.com/},
+  urldate  = {25.05.2026},
+  note     = {Загл. с экр. Яз. англ.},
+  language = {russian}
+}
+
+@online{tailwind,
+  title    = {Tailwind CSS. Официальная документация},
+  url      = {https://tailwindcss.com/docs/},
+  urldate  = {25.05.2026},
+  note     = {Загл. с экр. Яз. англ.},
   language = {russian}
 }

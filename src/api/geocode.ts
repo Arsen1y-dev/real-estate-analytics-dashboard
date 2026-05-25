@@ -6,7 +6,7 @@ export type ReverseGeocodeApiResponse = {
     cacheKey: string;
     address: string | null;
     source: 'cache' | 'online' | 'fallback';
-    provider: 'cache' | 'yandex-key' | 'yandex-public' | 'nominatim-public';
+    provider: 'cache' | 'yandex-key' | 'yandex-public' | 'nominatim-public' | 'photon-public';
     fallbackReason:
         | 'no_api_key'
         | 'invalid-key'

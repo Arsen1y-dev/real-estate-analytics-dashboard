@@ -22,6 +22,7 @@ import {
     watchMapTileErrors,
     type Ymaps21Global,
     type Ymaps21Map,
+    type Ymaps21Placemark,
 } from '@/utils/yandexMapsLoader';
 
 const MAP_POINT_LIMIT_LEVELS = [200, 500, 1000, 1500, 2000, 3000, 5000, 7000, 10000] as const;
@@ -237,6 +238,15 @@ function createClusterBalloonLayout(ymaps: Ymaps21Global): unknown {
     );
 }
 
+function placemarkProperties(point: MapPoint, theme: Theme) {
+    return {
+        balloonContentHeader: placemarkHeader(point),
+        balloonContentBody: placemarkBalloonBody(point, theme),
+        clusterCaption: placemarkClusterCaption(point),
+        hintContent: point.address?.trim() || placemarkClusterCaption(point),
+    };
+}
+
 function initMap(
     host: HTMLDivElement,
     ymaps: Ymaps21Global,
@@ -244,7 +254,7 @@ function initMap(
     bounds: ReturnType<typeof boundsFromLatLng>,
     theme: Theme,
     mapCenter: [number, number],
-): { map: Ymaps21Map; clusterer: { removeAll: () => void } | null } {
+): { map: Ymaps21Map; clusterer: { removeAll: () => void } | null; placemarks: Ymaps21Placemark[] } {
     const coords = latLngPointsForV21(sampled);
     const center = coords[0] ?? mapCenter;
 
@@ -263,16 +273,9 @@ function initMap(
     const clusterBalloonContentLayout = createClusterBalloonLayout(ymaps);
 
     const placemarks = sampled.map(point => {
-        return new ymaps.Placemark(
-            [point.lat, point.lng],
-            {
-                balloonContentHeader: placemarkHeader(point),
-                balloonContentBody: placemarkBalloonBody(point, theme),
-                clusterCaption: placemarkClusterCaption(point),
-                hintContent: point.address?.trim() || placemarkClusterCaption(point),
-            },
-            { preset: 'islands#violetDotIcon' },
-        );
+        return new ymaps.Placemark([point.lat, point.lng], placemarkProperties(point, theme), {
+            preset: 'islands#violetDotIcon',
+        });
     });
 
     let clusterer: { removeAll: () => void } | null = null;
@@ -305,7 +308,7 @@ function initMap(
         );
     }
 
-    return { map, clusterer };
+    return { map, clusterer, placemarks };
 }
 
 function ExpandMapIcon() {
@@ -335,6 +338,7 @@ export const ObjectsMap = React.memo(function ObjectsMap({
     const mapHostRef = useRef<HTMLDivElement>(null);
     const mapRef = useRef<Ymaps21Map | null>(null);
     const clustererRef = useRef<{ removeAll: () => void } | null>(null);
+    const placemarksRef = useRef<Ymaps21Placemark[]>([]);
     const apiKey = getYandexMapsApiKey();
     const [expanded, setExpanded] = useState(false);
     const [mapError, setMapError] = useState<string | null>(null);
@@ -373,24 +377,31 @@ export const ObjectsMap = React.memo(function ObjectsMap({
     const { resolveAddress, version: reverseAddressVersion } = useReverseGeocodeAddresses(token, reverseGeocodeCoordsByKey, {
         autoStart: true,
     });
-    const geocodedPoints = useMemo(() => {
-        return points.map(point => {
+    const rowsWithLink = mapStats.rowsWithLink;
+    const renderedPointCount = Math.min(points.length, mapPointLimit);
+    const hiddenByLimit = Math.max(points.length - mapPointLimit, 0);
+    const sampledCoords = useMemo(
+        () => samplePointsWithinLimit(points, renderedPointCount),
+        [points, renderedPointCount],
+    );
+    const geocodedSampled = useMemo(() => {
+        return sampledCoords.map(point => {
             const key = buildCanonicalReverseGeocodeKey(point.lat, point.lng)?.cacheKey;
             const fallback = point.address?.trim() || 'Адрес не определен';
             if (!key || point.address?.trim()) return { ...point, address: fallback };
             return { ...point, address: resolveAddress(key, fallback) };
         });
-    }, [points, resolveAddress, reverseAddressVersion]);
-    const rowsWithLink = mapStats.rowsWithLink;
-    const renderedPointCount = Math.min(geocodedPoints.length, mapPointLimit);
-    const hiddenByLimit = Math.max(geocodedPoints.length - mapPointLimit, 0);
-    const sampled = useMemo(() => samplePointsWithinLimit(geocodedPoints, renderedPointCount), [geocodedPoints, renderedPointCount]);
-    const pointCountLabelParts = [`На карте: ${sampled.length}`];
+    }, [sampledCoords, resolveAddress, reverseAddressVersion]);
+    const sampledGeometryKey = useMemo(
+        () => sampledCoords.map(point => `${point.lat},${point.lng},${point.listingUrl ?? ''}`).join('|'),
+        [sampledCoords],
+    );
+    const pointCountLabelParts = [`На карте: ${sampledCoords.length}`];
     if (hiddenByLimit > 0) pointCountLabelParts.push(`${hiddenByLimit} скрыто лимитом`);
     if (mapStats.tooFarFiltered > 0) pointCountLabelParts.push(`${mapStats.tooFarFiltered} вне радиуса`);
     const pointCountLabel = pointCountLabelParts.join(' · ');
 
-    const bounds = useMemo(() => boundsFromLatLng(sampled), [sampled]);
+    const bounds = useMemo(() => boundsFromLatLng(sampledCoords), [sampledCoords]);
     const mapCenter = useMemo((): [number, number] => {
         const c = resolveCityCenter(summary);
         if (c) return [c.lat, c.lng];
@@ -425,7 +436,7 @@ export const ObjectsMap = React.memo(function ObjectsMap({
     }, [expanded]);
 
     useEffect(() => {
-        if (!apiKey || !mapHostRef.current || geocodedPoints.length === 0) return;
+        if (!apiKey || !mapHostRef.current || sampledCoords.length === 0) return;
 
         let cancelled = false;
         let stopTileWatch: (() => void) | undefined;
@@ -442,11 +453,20 @@ export const ObjectsMap = React.memo(function ObjectsMap({
                 mapRef.current?.destroy();
                 mapRef.current = null;
                 clustererRef.current = null;
+                placemarksRef.current = [];
                 host.replaceChildren();
 
-                const { map, clusterer } = initMap(host, ymaps, sampled, bounds, theme, mapCenter);
+                const { map, clusterer, placemarks } = initMap(
+                    host,
+                    ymaps,
+                    geocodedSampled,
+                    bounds,
+                    theme,
+                    mapCenter,
+                );
                 mapRef.current = map;
                 clustererRef.current = clusterer;
+                placemarksRef.current = placemarks;
 
                 stopTileWatch = watchMapTileErrors(host, msg => {
                     if (!cancelled) setMapError(msg);
@@ -465,10 +485,18 @@ export const ObjectsMap = React.memo(function ObjectsMap({
             stopTileWatch?.();
             clustererRef.current?.removeAll();
             clustererRef.current = null;
+            placemarksRef.current = [];
             mapRef.current?.destroy();
             mapRef.current = null;
         };
-    }, [apiKey, sampled, bounds, theme, mapCenter, loadAttempt, reverseAddressVersion]);
+    }, [apiKey, sampledGeometryKey, bounds, theme, mapCenter, loadAttempt]);
+
+    useEffect(() => {
+        if (!mapReady || placemarksRef.current.length === 0) return;
+        for (let index = 0; index < geocodedSampled.length; index += 1) {
+            placemarksRef.current[index]?.properties.set(placemarkProperties(geocodedSampled[index], theme));
+        }
+    }, [mapReady, geocodedSampled, theme, reverseAddressVersion]);
 
     const fitMapToHost = () => {
         try {
@@ -497,7 +525,7 @@ export const ObjectsMap = React.memo(function ObjectsMap({
     const originHint =
         typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
 
-    const canShowMap = Boolean(apiKey && !mapError && geocodedPoints.length > 0);
+    const canShowMap = Boolean(apiKey && !mapError && points.length > 0);
 
     const mapPanelClass = expanded
         ? themeClass(theme, {
