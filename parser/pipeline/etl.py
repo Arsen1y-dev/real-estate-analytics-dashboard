@@ -22,6 +22,11 @@ SERVICE_ADDRESS_RE = re.compile(
 ADDRESS_HAS_LETTER_RE = re.compile(r"[a-zа-яё]", re.IGNORECASE)
 
 
+def is_polluted_parser_address(text: str) -> bool:
+    low = (text or "").strip().lower()
+    return "садовническ" in low and re.search(r"\b82\b", low) is not None
+
+
 def to_float(raw) -> float | None:
     if pd.isna(raw):
         return None
@@ -91,6 +96,8 @@ def sanitize_address(raw) -> str:
     if "http://" in compact or "https://" in compact:
         return ""
     if not ADDRESS_HAS_LETTER_RE.search(normalized):
+        return ""
+    if is_polluted_parser_address(normalized):
         return ""
     return normalized
 

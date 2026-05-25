@@ -1,4 +1,5 @@
 import type { DataRow } from '@/types';
+import { isPollutedParserAddress } from '../../shared/pollutedAddresses';
 
 export const ADDRESS_COLUMN_CANDIDATES = ['Расположение', 'Адрес', 'address', 'Address', 'address_full'] as const;
 
@@ -17,6 +18,7 @@ export function sanitizeAddressValue(value: unknown): string | null {
     if (INVALID_ADDRESS_MARKERS.has(compact)) return null;
     if (NUMERIC_ONLY_RE.test(normalized)) return null;
     if (COORD_PAIR_RE.test(normalized)) return null;
+    if (isPollutedParserAddress(normalized)) return null;
     return normalized;
 }
 

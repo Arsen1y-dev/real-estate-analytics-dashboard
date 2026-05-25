@@ -15,6 +15,7 @@ import { mergeDatasetRows, mergeTwoDatasetRows } from '../shared/mergeDatasetRow
 import { offerIdsFromRow } from '../shared/listingIds';
 import type { CityProfile } from '../shared/cities';
 import { getCityDistanceLimitKm } from '../shared/cities';
+import { isPollutedParserAddress } from '../shared/pollutedAddresses';
 
 export type DatasetState = { rows: DataRow[]; summary: DataSummary };
 
@@ -207,6 +208,7 @@ function hasValidAddress(row: DataRow): boolean {
     const compact = normalized.toLowerCase().replace(/\s+/g, '');
     if (INVALID_ADDRESS_MARKERS.has(compact)) return false;
     if (looksLikeGeolocationPair(normalized)) return false;
+    if (isPollutedParserAddress(normalized)) return false;
     return !NUMERIC_ONLY_RE.test(normalized);
 }
 
@@ -218,6 +220,7 @@ function sanitizeAddressCell(raw: unknown): string {
     if (INVALID_ADDRESS_MARKERS.has(compact)) return '';
     if (NUMERIC_ONLY_RE.test(normalized)) return '';
     if (looksLikeGeolocationPair(normalized)) return '';
+    if (isPollutedParserAddress(normalized)) return '';
     return normalized;
 }
 

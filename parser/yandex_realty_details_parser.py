@@ -41,6 +41,10 @@ ADDRESS_REJECT_PHRASES = (
     "дней", "дня на", "дня.", "км ", "мин.", "пешком", "ж/д ст",
     "купить квартиру", "купить апартамент", "в новостройке", "в монолитном",
 )
+# Юридический адрес Яндекса — часто попадает из футера/контактов вместо адреса объекта
+def is_polluted_parser_address(text: str) -> bool:
+    low = (text or "").strip().lower()
+    return "садовническ" in low and re.search(r"\b82\b", low) is not None
 
 ADDRESS_STREET_MARKERS = (
     "ул.", "улица", "проспект", "пр-т", "пр.", "проезд", "шоссе",
@@ -1661,6 +1665,8 @@ class YandexRealtyDetailsParser:
         if "http://" in low or "https://" in low:
             return False
         if any(p in low for p in ADDRESS_REJECT_PHRASES):
+            return False
+        if is_polluted_parser_address(low):
             return False
         # «7 д.» без улицы — типичный ложный матч из «В экспозиции 7 д.»
         if re.search(r"(?<![\wа-яё])д\.\s*$", low) and not any(m in low for m in ("ул.", "проезд", "проспект", "шоссе", "переулок", "наб")):

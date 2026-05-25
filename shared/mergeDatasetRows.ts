@@ -1,5 +1,6 @@
 import type { DataRow } from './dashboard';
 import { looksLikeGeolocationPair, parseGeolocationCell } from './geolocation';
+import { isPollutedParserAddress } from './pollutedAddresses';
 import {
     OFFER_ID_COLUMN_KEYS,
     listingUrlFromRowCells,
@@ -47,6 +48,7 @@ function sanitizeAddressValue(value: unknown): string | null {
     if (INVALID_ADDRESS_MARKERS.has(compact)) return null;
     if (NUMERIC_ONLY_RE.test(normalized)) return null;
     if (looksLikeGeolocationPair(normalized)) return null;
+    if (isPollutedParserAddress(normalized)) return null;
     return normalized;
 }
 
@@ -58,6 +60,11 @@ function normalizeAddressFields(row: DataRow): void {
             canonicalAddress = sanitized;
             break;
         }
+    }
+    for (const key of ADDRESS_COLUMN_CANDIDATES) {
+        const raw = row[key];
+        if (raw == null || raw === '') continue;
+        if (sanitizeAddressValue(raw) === null) row[key] = '';
     }
     if (!canonicalAddress) return;
     row['Расположение'] = canonicalAddress;
