@@ -1,0 +1,16 @@
+[Unit]
+Description=Real Estate Analytics Dashboard API
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/var/www/real-estate-analytics-dashboard
+EnvironmentFile=/var/www/real-estate-analytics-dashboard/.env
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/npm run start:api
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

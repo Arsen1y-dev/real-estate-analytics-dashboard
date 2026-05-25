@@ -7,7 +7,12 @@
     "dev": "vite",
     "dev:api": "tsx server/index.ts",
     "dev:all": "npm run dev:api & npm run dev",
+    "dev:tunnel": "TUNNEL_PROVIDER=localtunnel bash scripts/dev-with-tunnel.sh",
+    "dev:tunnel:cf": "TUNNEL_PROVIDER=cloudflare bash scripts/dev-with-tunnel.sh",
+    "dev:tunnel:lt": "TUNNEL_PROVIDER=localtunnel bash scripts/dev-with-tunnel.sh",
+    "dev:tunnel:ngrok": "TUNNEL_PROVIDER=ngrok bash scripts/dev-with-tunnel.sh",
     "build": "vite build",
+    "start:api": "tsx server/index.ts",
     "preview": "vite preview",
     "check:parser-configs": "tsx server/validateParserConfigs.ts"
   },
@@ -36,6 +41,7 @@
     "@types/papaparse": "^5.5.0",
     "@vitejs/plugin-react": "^5.0.0",
     "baseline-browser-mapping": "^2.10.16",
+    "localtunnel": "^2.0.2",
     "tsx": "^4.22.3",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"

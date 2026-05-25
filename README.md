@@ -55,6 +55,56 @@ npm run dev:all
 
 Если заходите с телефона по IP в локальной сети — **не** задавайте `VITE_API_BASE_URL`: запросы пойдут через proxy Vite на `/api`.
 
+### Доступ из интернета (туннель с ноутбука)
+
+Поднимает API + Vite и выдаёт **публичный HTTPS-URL** — дашборд доступен **не только в Wi‑Fi**, а из любой сети.
+
+По умолчанию: **сборка + vite preview** (стабильно через localtunnel). Режим `vite dev` через туннель часто даёт 502 и белый экран.
+
+1. Запуск:
+
+   ```bash
+   npm install
+   npm run dev:tunnel
+   ```
+
+   Первый запуск займёт ~30 с на `npm run build`. Hot-reload через туннель не работает — для правок кода перезапустите команду.
+
+   Dev через туннель (не рекомендуется): `TUNNEL_SERVE=dev npm run dev:tunnel`
+
+2. В выводе найдите строку:
+
+   ```
+   your url is: https://xxxx.loca.lt
+   ```
+
+   Откройте **этот** адрес (не `localhost` и не `192.168.x.x`).
+
+3. При первом заходе localtunnel покажет страницу «Tunnel Reminder» — нажмите **Click to Continue**.
+
+4. Referer для Яндекс.Карт:
+
+   ```
+   https://xxxx.loca.lt/*
+   ```
+
+**Альтернативы:**
+
+```bash
+npm run dev:tunnel:cf    # Cloudflare (может обрываться)
+npm run dev:tunnel:ngrok # ngrok (нужен brew install ngrok)
+```
+
+Переменные (опционально):
+
+| Переменная | По умолчанию | Описание |
+|------------|--------------|----------|
+| `TUNNEL_PROVIDER` | `localtunnel` | `localtunnel`, `cloudflare`, `ngrok` |
+| `LT_SUBDOMAIN` | — | Желаемый поддомен loca.lt (если свободен) |
+| `DEV_PORT` | `3000` | Порт Vite |
+
+**Безопасность:** в dev включены тестовые учётки (`admin123` и т.д.) и SQLite на диске — не держите туннель открытым дольше, чем нужно для демо.
+
 Тестовые учётки создаются при первом запуске API:
 
 | Логин | Пароль | Роль |
@@ -120,7 +170,7 @@ npm run dev:all
 
 Для строк без нормального адреса, но с координатами, таблица может подтянуть текстовый адрес через API. Ложные адреса офиса Яндекса («Садовническая, 82») отбрасываются на этапе парсинга, ETL и в UI — вместо них используется geocoding.
 
-Цепочка на сервере: Yandex Geocoder (с ключом) → Yandex без ключа → Nominatim (OpenStreetMap). Успешные ответы пишутся в SQLite (`reverse_geocode_cache`) и in-memory кэш с TTL (`REVERSE_GEOCODE_TTL_DAYS`, по умолчанию 14).
+Цепочка на сервере: Yandex Geocoder (с ключом) → Photon → Nominatim (OpenStreetMap). Успешные ответы пишутся в SQLite (`reverse_geocode_cache`) и in-memory кэш с TTL (`REVERSE_GEOCODE_TTL_DAYS`, по умолчанию 14).
 
 В **таблице** geocoding не стартует сам: кнопки «Запустить геокодинг» / «Остановить геокодинг» и прогресс «N / M». При открытии таблицы snapshot по ключам подтягивает уже сохранённые адреса из кэша. На **карте** geocoding для балунов идёт в фоне.
 
@@ -296,8 +346,9 @@ cd parser
 | `VITE_API_BASE_URL` | Явный URL API; в dev обычно пусто |
 | `JWT_SECRET` | Секрет JWT (в проде обязательно сменить) |
 | `API_PORT` | Порт API (3001) |
-| `PARSER_PYTHON` | Python для jobs парсера |
 | `NODE_ENV` | `production` отключает debug-эндпоинты |
+| `NOMINATIM_CONTACT_EMAIL` | Email для User-Agent Nominatim (fallback) |
+| `PARSER_PYTHON` | Python для jobs парсера |
 
 ## API (кратко)
 
@@ -335,6 +386,7 @@ cd parser
 | `npm run dev:api` | Express :3001 |
 | `npm run dev:all` | Оба процесса |
 | `npm run build` | Сборка в `dist/` |
+| `npm run start:api` | API для production (systemd на VPS) |
 | `npm run preview` | Просмотр production-сборки |
 | `npm run check:parser-configs` | Валидация JSON конфигов парсера |
 
@@ -372,7 +424,9 @@ report/                 LaTeX-отчёт (отдельно от runtime)
 npm run build
 ```
 
-Статика в `dist/`. API поднимается отдельно (`npm run dev:api` или process manager). Для production задайте `JWT_SECRET`, ключи Яндекса, при необходимости `VITE_API_BASE_URL` на URL API.
+Статика в `dist/`. API поднимается отдельно (`npm run start:api` или systemd). Для production задайте `JWT_SECRET`, ключи Яндекса; `VITE_API_BASE_URL` не нужен, если nginx проксирует `/api` с того же домена.
+
+**Деплой на VPS (Beget):** [deploy/beget.md](deploy/beget.md)
 
 ## Лицензия
 

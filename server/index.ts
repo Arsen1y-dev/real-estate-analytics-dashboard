@@ -37,6 +37,7 @@ const DB_PATH = path.join(SERVER_DATA_DIR, 'app.db');
 const DEFAULT_CSV_PATH = path.join(ROOT, 'processed_apartment_data.csv');
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
 const PORT = Number(process.env.API_PORT || 3001);
+const HOST = process.env.API_HOST || '0.0.0.0';
 const MAX_DATASET_BYTES = 20 * 1024 * 1024;
 const MAX_DATASET_ROWS = 50_000;
 const IS_DEV = process.env.NODE_ENV !== 'production';
@@ -45,6 +46,7 @@ fs.mkdirSync(SERVER_DATA_DIR, { recursive: true });
 
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
+db.pragma('busy_timeout = 5000');
 db.exec(`
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -650,9 +652,9 @@ app.use((err: unknown, _req: express.Request, res: express.Response, next: expre
     next(err);
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, HOST, () => {
     // eslint-disable-next-line no-console
-    console.log(`[api] listening on http://localhost:${PORT}`);
+    console.log(`[api] listening on http://${HOST}:${PORT}`);
     if (IS_DEV) {
         const geocoderState = reverseGeocoder.getDebugState();
         // eslint-disable-next-line no-console
