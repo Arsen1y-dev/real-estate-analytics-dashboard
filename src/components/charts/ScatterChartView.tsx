@@ -1,9 +1,10 @@
 import React, { useMemo, useState } from 'react';
-import { ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, Brush } from 'recharts';
+import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, Brush } from 'recharts';
 import type { Theme } from '@/theme';
-import { themeClass } from '@/theme';
+import { themeClass, chartAccentStroke } from '@/theme';
 import { formatNumber } from '@/utils/format';
 import { axisDomainFromValues } from '@/utils/stats';
+import { MeasuredResponsiveContainer } from '@/components/charts/MeasuredResponsiveContainer';
 
 type Point = { x: number; y: number };
 
@@ -49,6 +50,7 @@ export const ScatterChartView: React.FC<{
     axisTextColor: string;
     scatterGridColor: string;
     tooltipStyle: React.CSSProperties;
+    isFullscreen?: boolean;
 }> = ({
     xLabel,
     yLabel,
@@ -59,6 +61,7 @@ export const ScatterChartView: React.FC<{
     axisTextColor,
     scatterGridColor,
     tooltipStyle,
+    isFullscreen = false,
 }) => {
     const sortedScatter = useMemo(() => [...displayPoints].sort((a, b) => a.x - b.x), [displayPoints]);
     const [brushRange, setBrushRange] = useState<{ start: number; end: number } | null>(null);
@@ -84,9 +87,37 @@ export const ScatterChartView: React.FC<{
     const resetBrush = () => setBrushRange(null);
     const brushStart = brushRange?.start ?? 0;
     const brushEnd = brushRange?.end ?? maxBrushIndex;
+    const trendLine = useMemo(() => {
+        const pts = selectedScatter.length >= 2 ? selectedScatter : sortedScatter;
+        if (pts.length < 2) return null;
+        let sx = 0;
+        let sy = 0;
+        let sxy = 0;
+        let sxx = 0;
+        for (const p of pts) {
+            sx += p.x;
+            sy += p.y;
+            sxy += p.x * p.y;
+            sxx += p.x * p.x;
+        }
+        const n = pts.length;
+        const den = n * sxx - sx * sx;
+        if (Math.abs(den) < 1e-12) return null;
+        const slope = (n * sxy - sx * sy) / den;
+        const intercept = (sy - slope * sx) / n;
+        const minX = Math.min(...pts.map(p => p.x));
+        const maxX = Math.max(...pts.map(p => p.x));
+        return {
+            points: [
+                { x: minX, y: slope * minX + intercept },
+                { x: maxX, y: slope * maxX + intercept },
+            ],
+            slope,
+        };
+    }, [selectedScatter, sortedScatter]);
 
     return (
-        <div className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col">
+        <div className="flex h-full min-h-[18rem] w-full min-w-0 flex-1 flex-col">
             {brushRange && (
                 <button
                     type="button"
@@ -99,8 +130,8 @@ export const ScatterChartView: React.FC<{
                     Весь диапазон
                 </button>
             )}
-            <div className="relative h-full min-h-[12rem] min-w-0 flex-1">
-                <ResponsiveContainer width="100%" height="100%">
+            <div className="relative h-full min-h-[18rem] min-w-0 flex-1">
+                <MeasuredResponsiveContainer minWidth={280} minHeight={280}>
                     <ScatterChart data={sortedScatter} margin={{ top: 12, right: 18, left: 14, bottom: 50 }}>
                         <CartesianGrid stroke={scatterGridColor} strokeDasharray="3 3" />
                         <XAxis
@@ -157,11 +188,19 @@ export const ScatterChartView: React.FC<{
                             }}
                         />
                         <Scatter data={sortedScatter} fill={chartFillColor} fillOpacity={0.72} isAnimationActive={false} />
+                        {trendLine && (
+                            <Scatter
+                                data={trendLine.points}
+                                line={{ stroke: '#f59e0b', strokeWidth: 2 }}
+                                shape={() => null}
+                                isAnimationActive={false}
+                            />
+                        )}
                         {sortedScatter.length > 1 && (
                             <Brush
                                 dataKey="x"
                                 height={26}
-                                stroke={theme === 'dark' ? '#818cf8' : '#6366f1'}
+                                stroke={chartAccentStroke(theme)}
                                 fill={brushFill}
                                 fillOpacity={0.62}
                                 travellerWidth={10}
@@ -182,7 +221,21 @@ export const ScatterChartView: React.FC<{
                             />
                         )}
                     </ScatterChart>
-                </ResponsiveContainer>
+                </MeasuredResponsiveContainer>
+                {trendLine && (
+                    <p
+                        className={themeClass(theme, {
+                            dark: isFullscreen
+                                ? 'pointer-events-none absolute right-3 top-3 z-20 rounded-md border border-amber-400/50 bg-zinc-950/88 px-2.5 py-1 text-[11px] font-medium text-amber-200 shadow-[0_1px_2px_rgba(0,0,0,0.55)]'
+                                : 'mt-1 text-[11px] text-zinc-400',
+                            light: isFullscreen
+                                ? 'pointer-events-none absolute right-3 top-3 z-20 rounded-md border border-amber-300/90 bg-white/94 px-2.5 py-1 text-[11px] font-medium text-amber-900 shadow-[0_1px_2px_rgba(0,0,0,0.16)]'
+                                : 'mt-1 text-[11px] text-zinc-600',
+                        })}
+                    >
+                        Линия тренда (МНК), наклон: {trendLine.slope.toFixed(4)}
+                    </p>
+                )}
             </div>
         </div>
     );

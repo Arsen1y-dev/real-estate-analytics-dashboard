@@ -1,7 +1,12 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import '@/theme.css';
 import '@/index.css';
 import App from '@/App';
+import { AuthProvider } from '@/auth';
+import { applyThemeToDocument, readPreferredColorScheme, readPreferredTheme } from '@/theme';
+
+applyThemeToDocument(readPreferredTheme(), readPreferredColorScheme());
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -11,6 +16,8 @@ if (!rootElement) {
 const root = ReactDOM.createRoot(rootElement);
 root.render(
     <React.StrictMode>
-        <App />
+        <AuthProvider>
+            <App />
+        </AuthProvider>
     </React.StrictMode>
 );

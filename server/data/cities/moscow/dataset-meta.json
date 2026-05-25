@@ -1,0 +1,25 @@
+{
+  "rowCount": 12549,
+  "updatedAt": "2026-05-24T16:59:08.058Z",
+  "lastFileName": "processed_apartment_data.csv",
+  "uploads": [
+    {
+      "batchId": "388f3c71-47dd-4098-9b4d-9b7fca6ff3bb",
+      "at": "2026-05-24T15:51:53.474Z",
+      "fileName": "old_processed.csv",
+      "added": 5341,
+      "skippedDuplicates": 0,
+      "tooFarFiltered": 0,
+      "mode": "append"
+    },
+    {
+      "batchId": "60719581-25fc-4452-a65f-5d5e61cece83",
+      "at": "2026-05-24T16:59:07.573Z",
+      "fileName": "processed_apartment_data.csv",
+      "added": 7208,
+      "skippedDuplicates": 3217,
+      "tooFarFiltered": 16,
+      "mode": "append"
+    }
+  ]
+}

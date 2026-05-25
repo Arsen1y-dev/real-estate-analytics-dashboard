@@ -1,0 +1,20 @@
+{
+  "base_url": "https://realty.yandex.ru/saratov/kupit/kvartira/odnokomnatnaya/",
+  "use_proxy": false,
+  "proxy_url": null,
+  "headless": true,
+  "max_pages": 20,
+  "max_links": null,
+  "links_file": "yandex_realty_links.txt",
+  "details_file": "yandex_realty_details.csv",
+  "processed_file": "processed_apartment_data.csv",
+  "details_stats_file": "details_parsing_stats.json",
+  "links_stats_file": "parsing_stats.json",
+  "schema_contract_file": "pipeline/schema_contract.json",
+  "qa_report_json": "pipeline/reports/data_quality_report.json",
+  "qa_report_md": "pipeline/reports/data_quality_report.md",
+  "dashboard_processed_target": "../real-estate-analytics-dashboard/processed_apartment_data.csv",
+  "resume_details": true,
+  "city_center_lat": 51.533103,
+  "city_center_lng": 46.034266
+}

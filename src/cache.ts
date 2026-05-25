@@ -1,4 +1,6 @@
 import type { DataRow, DataSummary } from '@/types';
+import { refreshSummaryFromData } from '@/domain/dataset';
+import { mergeDatasetRows } from '../shared/mergeDatasetRows';
 
 const STORAGE_KEY = 'realty-dashboard-dataset-v2';
 const MAX_CACHE_CHARS = 4_500_000;
@@ -36,9 +38,12 @@ export function loadCachedDataset(): CachedDataset | null {
             memoryCachedDataset = null;
             return null;
         }
+        const { rows: mergedRows } = mergeDatasetRows(parsed.data);
+        const summary = refreshSummaryFromData(mergedRows, parsed.summary);
+        const hydrated: CachedDataset = { ...parsed, data: mergedRows, summary };
         memoryCacheLoaded = true;
-        memoryCachedDataset = parsed;
-        return parsed;
+        memoryCachedDataset = hydrated;
+        return hydrated;
     } catch {
         memoryCacheLoaded = true;
         memoryCachedDataset = null;

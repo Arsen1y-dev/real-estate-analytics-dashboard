@@ -1,0 +1,17 @@
+[
+  "https://realty.yandex.ru/saratov/kupit/kvartira/novostroyki/",
+  "https://realty.yandex.ru/saratov/kupit/kvartira/vtorichniy-rynok/",
+  "https://realty.yandex.ru/saratov/kupit/kvartira/studiya/vtorichniy-rynok/",
+  "https://realty.yandex.ru/saratov/kupit/kvartira/odnokomnatnaya/vtorichniy-rynok/",
+  "https://realty.yandex.ru/saratov/kupit/kvartira/dvuhkomnatnaya/vtorichniy-rynok/",
+  "https://realty.yandex.ru/saratov/kupit/kvartira/tryohkomnatnaya/vtorichniy-rynok/",
+  "https://realty.yandex.ru/saratov/kupit/kvartira/?priceMin=1500000&priceMax=3000000",
+  "https://realty.yandex.ru/saratov/kupit/kvartira/?priceMin=3000000&priceMax=5000000",
+  "https://realty.yandex.ru/saratov/kupit/kvartira/?priceMin=5000000&priceMax=8000000",
+  "https://realty.yandex.ru/saratov/kupit/kvartira/?priceMin=8000000&priceMax=15000000",
+  "https://realty.yandex.ru/saratov/kupit/kvartira/?sort=DATE_DESC",
+  "https://realty.yandex.ru/saratov/kupit/kvartira/?sort=PRICE_ASC",
+  "https://realty.yandex.ru/saratov/kupit/kvartira/?sort=PRICE_DESC",
+  "https://realty.yandex.ru/saratov/kupit/kvartira/novostroyki/?sort=DATE_DESC",
+  "https://realty.yandex.ru/saratov/kupit/kvartira/vtorichniy-rynok/?sort=DATE_DESC"
+]

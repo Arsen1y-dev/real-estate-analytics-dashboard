@@ -1,0 +1,48 @@
+{
+  "base_url": "https://realty.yandex.ru/saratov/kupit/kvartira/odnokomnatnaya/",
+  "base_urls": null,
+  "search_segments": null,
+  "search_segments_file": null,
+  "use_proxy": false,
+  "proxy_url": null,
+  "headless": true,
+  "max_pages": 20,
+  "target_listings": null,
+  "max_links": null,
+  "links_file": "yandex_realty_links.txt",
+  "details_file": "yandex_realty_details.csv",
+  "processed_file": "processed_apartment_data.csv",
+  "details_stats_file": "details_parsing_stats.json",
+  "links_stats_file": "parsing_stats.json",
+  "schema_contract_file": "pipeline/schema_contract.json",
+  "qa_report_json": "pipeline/reports/data_quality_report.json",
+  "qa_report_md": "pipeline/reports/data_quality_report.md",
+  "dashboard_processed_target": "../real-estate-analytics-dashboard/processed_apartment_data.csv",
+  "resume_details": true,
+  "resume_after_captcha": true,
+  "delay_between_listings_min": 5,
+  "delay_between_listings_max": 12,
+  "delay_after_page_load_min": 4,
+  "delay_after_page_load_max": 8,
+  "request_delays_ms": {
+    "links": {
+      "scroll_min": 700,
+      "scroll_max": 1800,
+      "navigation_min": 2500,
+      "navigation_max": 5000,
+      "pagination_click_min": 900,
+      "pagination_click_max": 2200,
+      "between_pages_min": 4500,
+      "between_pages_max": 9000
+    },
+    "details": {
+      "before_open_min": 600,
+      "before_open_max": 1400,
+      "after_open_min": 2500,
+      "after_open_max": 5200
+    }
+  },
+  "max_links_per_session": null,
+  "city_center_lat": 51.533103,
+  "city_center_lng": 46.034266
+}

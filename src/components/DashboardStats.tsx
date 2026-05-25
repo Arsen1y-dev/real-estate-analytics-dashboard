@@ -1,15 +1,14 @@
 import React, { useMemo } from 'react';
 import type { DataRow, DataSummary } from '@/types';
-import type { Theme } from '@/theme';
-import { themeClass } from '@/theme';
-import { mean, median } from '@/utils/stats';
+import type { ColorScheme, Theme } from '@/theme';
+import { getRuntimeColorScheme, themeClass } from '@/theme';
+import { median } from '@/utils/stats';
 import { isFiniteNumber } from '@/domain/dataset';
 import { statCardSurface, type StatGradientKey } from '@/components/dashboardStatGradients';
 import { MetricSparkline, type MetricSparklineSize } from '@/components/MetricSparkline';
 import {
     formatAreaCompactSqM,
     formatCountCompact,
-    formatExtraMedianCompact,
     formatPercentDelta,
     formatRubCompact,
     formatRubPerM2Compact,
@@ -17,34 +16,14 @@ import {
 } from '@/utils/metricDisplay';
 import { generateMarketInsights } from '@/domain/insights';
 
-const MAX_STAT_CARDS = 7;
+const LABEL_PRICE_MEDIAN = 'Медиана: цена';
+const LABEL_RPM2_MEDIAN = 'Медиана цены за м²';
+const LABEL_LIVING_AREA_MEDIAN = 'Медиана: жилая площадь';
+const LABEL_TOTAL_AREA_MEDIAN = 'Медиана: общая площадь';
+const LABEL_SAMPLE_COUNT = 'Объектов в выборке';
 
-/** Подзаголовок секции KPI: один раз, чтобы не расходиться в пустом и заполненном состоянии. */
-const KPI_SECTION_LEAD =
-    'Показатели пересчитываются по текущей выборке. Главный KPI выделен крупной карточкой, остальные — для сравнения и контекста.';
-
-function columnExcludedFromExtraMedian(name: string): boolean {
-    const l = name.toLowerCase();
-    if (l.includes('срок') && (l.includes('сдач') || l.includes('сдачи'))) return true;
-    if (l.includes('срок_сдач')) return true;
-    if (l.includes('год построй') || l.includes('год_построй')) return true;
-    if (l.includes('широт')) return true;
-    if (l.includes('долгот')) return true;
-    if (isPricePerSquareMeterColumnName(name)) return true;
-    if (l.includes('возраст') && l.includes('дом')) return true;
-    if (l.includes('возраст_дом')) return true;
-    if (l.includes('ремонт')) return true;
-    if (l.includes('расстоян') && (l.includes('центр') || l.includes('км'))) return true;
-    if (l.includes('distance') && l.includes('center')) return true;
-    return false;
-}
-
-function isPricePerSquareMeterColumnName(name: string): boolean {
-    const l = name.toLowerCase();
-    const hasM2 = l.includes('м²') || l.includes('м2') || l.includes('кв.м') || l.includes('кв м');
-    if (!hasM2) return false;
-    return l.includes('цен') || l.includes('price') || l.includes('руб');
-}
+const COL_LIVING_AREA = 'Жилая площадь';
+const COL_PRICE_PER_M2 = 'Цена за м²';
 
 function sparklineFromCount(n: number): number[] {
     if (n < 2) return [];
@@ -52,26 +31,48 @@ function sparklineFromCount(n: number): number[] {
     return Array.from({ length: steps }, (_, i) => Math.round(((i + 1) / steps) * n));
 }
 
-/** Индекс главного KPI: медиана цены → медиана ₽/м² → медиана площади → первый не «количество». */
-function pickHeroCardIndex(items: BuiltCard[]): number {
-    if (items.length <= 1) return 0;
-    const byKey = (k: StatGradientKey) => items.findIndex(i => i.gradientKey === k);
-    const priceMed = byKey('priceMedian');
-    if (priceMed >= 0) return priceMed;
-    const rpm2Med = byKey('rpm2Median');
-    if (rpm2Med >= 0) return rpm2Med;
-    const area = byKey('area');
-    if (area >= 0) return area;
-    const nonCount = items.findIndex(i => i.gradientKey !== 'count');
-    return nonCount >= 0 ? nonCount : 0;
+function resolveLivingAreaColumn(summary: DataSummary): string | null {
+    if (summary.columnOrder.includes(COL_LIVING_AREA)) return COL_LIVING_AREA;
+    const col = summary.columns.find(
+        c => c.kind === 'numeric' && /жил/i.test(c.name) && /площад/i.test(c.name)
+    );
+    return col?.name ?? null;
+}
+
+function resolvePricePerM2Column(summary: DataSummary): string | null {
+    if (summary.columnOrder.includes(COL_PRICE_PER_M2)) return COL_PRICE_PER_M2;
+    const col = summary.columns.find(
+        c =>
+            c.kind === 'numeric' &&
+            (/цен/i.test(c.name) || /price/i.test(c.name)) &&
+            (/м²|м2|кв\.?\s*м/i.test(c.name))
+    );
+    return col?.name ?? null;
+}
+
+function medianPricePerM2(
+    rows: DataRow[],
+    priceCol: string,
+    areaCol: string
+): { values: number[]; median: number } | null {
+    const values = rows
+        .map(d => {
+            const p = d[priceCol];
+            const a = d[areaCol];
+            if (!isFiniteNumber(p) || !isFiniteNumber(a) || a <= 0) return NaN;
+            return p / a;
+        })
+        .filter(Number.isFinite);
+    if (!values.length) return null;
+    return { values, median: median(values) };
 }
 
 export type DashboardStatsProps = {
     data: DataRow[];
-    /** Полный файл — для сравнения «к файлу» и базовых медиан. */
     baselineData?: DataRow[];
     summary: DataSummary;
     theme: Theme;
+    colorScheme?: ColorScheme;
 };
 
 type BuiltCard = {
@@ -85,38 +86,41 @@ type BuiltCard = {
 type KpiCardProps = {
     item: BuiltCard;
     theme: Theme;
+    colorScheme: ColorScheme;
     variant: 'hero' | 'secondary';
 };
 
-function isMarketHeroKey(k: StatGradientKey): boolean {
-    return k === 'priceMedian' || k === 'priceMean' || k === 'rpm2Median' || k === 'rpm2Mean' || k === 'area';
-}
-
-function KpiStatCard({ item, theme, variant }: KpiCardProps) {
+function KpiStatCard({ item, theme, colorScheme, variant }: KpiCardProps) {
     const showDelta = item.deltaPct != null && Number.isFinite(item.deltaPct);
-    /** Разница с полным файлом меньше 0,1 п.п. — показываем текст вместо «≈ 0%». */
     const smallDelta = showDelta && Math.abs(item.deltaPct!) < 0.1;
     const isHero = variant === 'hero';
     const sparkSize: MetricSparklineSize = isHero ? 'hero' : 'default';
-    const showHeroBadge = isHero && isMarketHeroKey(item.gradientKey);
 
-    const shell = themeClass(theme, {
+    const shell = themeClass(
+        theme,
+        {
         dark: isHero
             ? 'relative flex min-h-[10.5rem] flex-col overflow-hidden rounded-3xl border border-zinc-800/90 shadow-[0_1px_2px_rgba(0,0,0,0.2),0_12px_40px_-12px_rgba(0,0,0,0.45)] ring-1 ring-white/[0.04]'
             : 'relative flex min-h-[7.25rem] flex-col overflow-hidden rounded-2xl border border-zinc-800/80 shadow-sm shadow-black/25',
         light: isHero
             ? 'relative flex min-h-[10.5rem] flex-col overflow-hidden rounded-3xl border border-zinc-200/90 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04),0_24px_48px_-16px_rgba(0,0,0,0.08)] ring-1 ring-zinc-950/[0.03]'
             : 'relative flex min-h-[7.25rem] flex-col overflow-hidden rounded-2xl border border-zinc-200/85 bg-white/90 shadow-sm shadow-zinc-900/5',
-    });
+        },
+        colorScheme
+    );
 
-    const labelCls = themeClass(theme, {
-        dark: isHero
-            ? 'text-[11px] font-medium uppercase tracking-[0.14em] text-zinc-500'
-            : 'text-[10px] font-medium uppercase tracking-wide text-zinc-500/90',
-        light: isHero
-            ? 'text-[11px] font-medium uppercase tracking-[0.14em] text-zinc-500'
-            : 'text-[10px] font-medium uppercase tracking-wide text-zinc-500',
-    });
+    const labelCls = themeClass(
+        theme,
+        {
+            dark: isHero
+                ? 'text-[11px] font-medium uppercase tracking-[0.14em] text-zinc-500'
+                : 'text-[10px] font-medium uppercase tracking-wide text-zinc-500/90',
+            light: isHero
+                ? 'text-[11px] font-medium uppercase tracking-[0.14em] text-zinc-500'
+                : 'text-[10px] font-medium uppercase tracking-wide text-zinc-500',
+        },
+        colorScheme
+    );
 
     const valueCls = themeClass(theme, {
         dark: isHero
@@ -142,7 +146,7 @@ function KpiStatCard({ item, theme, variant }: KpiCardProps) {
             />
             <div className={`relative z-10 flex flex-1 flex-col justify-between gap-3 ${pad}`}>
                 <div className="min-w-0 space-y-1.5">
-                    {showHeroBadge && (
+                    {isHero && (
                         <p
                             className={themeClass(theme, {
                                 dark: 'text-[11px] font-medium text-indigo-400/95',
@@ -193,7 +197,7 @@ function KpiStatCard({ item, theme, variant }: KpiCardProps) {
                                             light: `font-medium text-zinc-500 ${isHero ? 'text-[11px]' : 'text-[10px]'}`,
                                         })}
                                     >
-                                        к полному файлу
+                                        к базе после очистки
                                     </span>
                                 </>
                             )}
@@ -208,141 +212,126 @@ function KpiStatCard({ item, theme, variant }: KpiCardProps) {
     );
 }
 
-export const DashboardStats: React.FC<DashboardStatsProps> = ({ data, baselineData, summary, theme }) => {
+export const DashboardStats: React.FC<DashboardStatsProps> = ({
+    data,
+    baselineData,
+    summary,
+    theme,
+    colorScheme: colorSchemeProp,
+}) => {
+    const colorScheme = colorSchemeProp ?? getRuntimeColorScheme();
     const insights = useMemo(() => generateMarketInsights(data, summary), [data, summary]);
 
-    const items = useMemo((): BuiltCard[] => {
-        if (!data.length) return [];
+    const { heroItem, secondaryItems } = useMemo(() => {
+        if (!data.length) {
+            return { heroItem: null as BuiltCard | null, secondaryItems: [] as BuiltCard[] };
+        }
 
         const base = baselineData?.length ? baselineData : data;
         const compare = baselineData && baselineData.length > 0 && baselineData !== data;
 
-        const list: BuiltCard[] = [
-            {
-                label: 'Объектов в выборке',
-                display: formatCountCompact(data.length),
-                gradientKey: 'count',
-                sparkline: sparklineFromCount(data.length),
-                deltaPct: compare ? percentChange(data.length, base.length) : null,
-            },
-        ];
-
         const priceCol = summary.coreColumnMap.price;
         const areaCol = summary.coreColumnMap.area;
+        const livingCol = resolveLivingAreaColumn(summary);
+        const rpm2Col = resolvePricePerM2Column(summary);
+
+        let heroItem: BuiltCard | null = null;
+        const secondaryItems: BuiltCard[] = [];
 
         if (priceCol) {
             const prices = data.map(d => d[priceCol]).filter(isFiniteNumber);
             const basePrices = base.map(d => d[priceCol]).filter(isFiniteNumber);
             if (prices.length) {
-                const mCur = mean(prices);
-                const mBase = basePrices.length ? mean(basePrices) : NaN;
-                list.push({
-                    label: `Среднее: ${priceCol}`,
-                    display: formatRubCompact(mCur),
-                    gradientKey: 'priceMean',
-                    sparkline: prices,
-                    deltaPct: compare && basePrices.length ? percentChange(mCur, mBase) : null,
-                });
                 const medCur = median(prices);
                 const medBase = basePrices.length ? median(basePrices) : NaN;
-                list.push({
-                    label: `Медиана: ${priceCol}`,
+                heroItem = {
+                    label: LABEL_PRICE_MEDIAN,
                     display: formatRubCompact(medCur),
                     gradientKey: 'priceMedian',
                     sparkline: prices,
                     deltaPct: compare && basePrices.length ? percentChange(medCur, medBase) : null,
+                };
+            }
+        }
+
+        const rpm2FromCol = rpm2Col
+            ? (() => {
+                  const vals = data.map(d => d[rpm2Col!]).filter(isFiniteNumber);
+                  const baseVals = base.map(d => d[rpm2Col!]).filter(isFiniteNumber);
+                  if (!vals.length) return null;
+                  const medCur = median(vals);
+                  const medBase = baseVals.length ? median(baseVals) : NaN;
+                  return {
+                      label: LABEL_RPM2_MEDIAN,
+                      display: formatRubPerM2Compact(medCur),
+                      gradientKey: 'rpm2Median' as StatGradientKey,
+                      sparkline: vals,
+                      deltaPct: compare && baseVals.length ? percentChange(medCur, medBase) : null,
+                  };
+              })()
+            : null;
+
+        const rpm2Computed =
+            !rpm2FromCol && priceCol && areaCol
+                ? (() => {
+                      const cur = medianPricePerM2(data, priceCol, areaCol);
+                      const baseR = medianPricePerM2(base, priceCol, areaCol);
+                      if (!cur) return null;
+                      return {
+                          label: LABEL_RPM2_MEDIAN,
+                          display: formatRubPerM2Compact(cur.median),
+                          gradientKey: 'rpm2Median' as StatGradientKey,
+                          sparkline: cur.values,
+                          deltaPct:
+                              compare && baseR ? percentChange(cur.median, baseR.median) : null,
+                      };
+                  })()
+                : null;
+
+        const rpm2Card = rpm2FromCol ?? rpm2Computed;
+        if (rpm2Card) secondaryItems.push(rpm2Card);
+
+        if (livingCol) {
+            const vals = data.map(d => d[livingCol]).filter(isFiniteNumber);
+            const baseVals = base.map(d => d[livingCol]).filter(isFiniteNumber);
+            if (vals.length) {
+                const medCur = median(vals);
+                const medBase = baseVals.length ? median(baseVals) : NaN;
+                secondaryItems.push({
+                    label: LABEL_LIVING_AREA_MEDIAN,
+                    display: formatAreaCompactSqM(medCur),
+                    gradientKey: 'area',
+                    sparkline: vals,
+                    deltaPct: compare && baseVals.length ? percentChange(medCur, medBase) : null,
                 });
             }
         }
 
         if (areaCol) {
-            const areas = data.map(d => d[areaCol]).filter(isFiniteNumber);
-            const baseAreas = base.map(d => d[areaCol]).filter(isFiniteNumber);
-            if (areas.length) {
-                const medCur = median(areas);
-                const medBase = baseAreas.length ? median(baseAreas) : NaN;
-                list.push({
-                    label: `Медиана: ${areaCol}`,
-                    display: formatAreaCompactSqM(medCur),
-                    gradientKey: 'area',
-                    sparkline: areas,
-                    deltaPct: compare && baseAreas.length ? percentChange(medCur, medBase) : null,
-                });
-            }
-        }
-
-        if (priceCol && areaCol) {
-            const ratios = data
-                .map(d => {
-                    const p = d[priceCol];
-                    const a = d[areaCol];
-                    if (!isFiniteNumber(p) || !isFiniteNumber(a) || a <= 0) return NaN;
-                    return p / a;
-                })
-                .filter(v => Number.isFinite(v));
-            const baseRatios = base
-                .map(d => {
-                    const p = d[priceCol];
-                    const a = d[areaCol];
-                    if (!isFiniteNumber(p) || !isFiniteNumber(a) || a <= 0) return NaN;
-                    return p / a;
-                })
-                .filter(v => Number.isFinite(v));
-            if (ratios.length) {
-                const meanCur = mean(ratios);
-                const meanBase = baseRatios.length ? mean(baseRatios) : NaN;
-                list.push({
-                    label: 'Средняя цена за м²',
-                    display: formatRubPerM2Compact(meanCur),
-                    gradientKey: 'rpm2Mean',
-                    sparkline: ratios,
-                    deltaPct: compare && baseRatios.length ? percentChange(meanCur, meanBase) : null,
-                });
-                const medCur = median(ratios);
-                const medBase = baseRatios.length ? median(baseRatios) : NaN;
-                list.push({
-                    label: 'Медиана цены за м²',
-                    display: formatRubPerM2Compact(medCur),
-                    gradientKey: 'rpm2Median',
-                    sparkline: ratios,
-                    deltaPct: compare && baseRatios.length ? percentChange(medCur, medBase) : null,
-                });
-            }
-        }
-
-        const roomsCol = summary.coreColumnMap.rooms;
-        const extraNumeric = summary.columns
-            .filter(
-                c =>
-                    c.kind === 'numeric' &&
-                    c.name !== priceCol &&
-                    c.name !== areaCol &&
-                    c.name !== roomsCol &&
-                    c.name !== 'houseType' &&
-                    !columnExcludedFromExtraMedian(c.name)
-            )
-            .slice(0, 3);
-
-        const extraKeys: StatGradientKey[] = ['extra0', 'extra1', 'extra2'];
-        let extraIdx = 0;
-        for (const col of extraNumeric) {
-            const vals = data.map(d => d[col.name]).filter(isFiniteNumber);
-            const baseVals = base.map(d => d[col.name]).filter(isFiniteNumber);
+            const vals = data.map(d => d[areaCol]).filter(isFiniteNumber);
+            const baseVals = base.map(d => d[areaCol]).filter(isFiniteNumber);
             if (vals.length) {
                 const medCur = median(vals);
                 const medBase = baseVals.length ? median(baseVals) : NaN;
-                list.push({
-                    label: `Медиана: ${col.name}`,
-                    display: formatExtraMedianCompact(col.name, medCur, vals),
-                    gradientKey: extraKeys[extraIdx % extraKeys.length]!,
+                secondaryItems.push({
+                    label: LABEL_TOTAL_AREA_MEDIAN,
+                    display: formatAreaCompactSqM(medCur),
+                    gradientKey: 'extra0',
                     sparkline: vals,
                     deltaPct: compare && baseVals.length ? percentChange(medCur, medBase) : null,
                 });
-                extraIdx += 1;
             }
         }
 
-        return list.slice(0, MAX_STAT_CARDS);
+        secondaryItems.push({
+            label: LABEL_SAMPLE_COUNT,
+            display: formatCountCompact(data.length),
+            gradientKey: 'count',
+            sparkline: sparklineFromCount(data.length),
+            deltaPct: compare ? percentChange(data.length, base.length) : null,
+        });
+
+        return { heroItem, secondaryItems };
     }, [data, baselineData, summary]);
 
     const sectionShell = themeClass(theme, {
@@ -350,7 +339,47 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({ data, baselineDa
         light: 'rounded-[1.75rem] border border-zinc-200/90 bg-white p-6 shadow-[0_1px_3px_rgba(0,0,0,0.04),0_12px_32px_-8px_rgba(0,0,0,0.06)] backdrop-blur-sm sm:p-8 md:p-10',
     });
 
-    if (!items.length) {
+    const insightsBlock =
+        insights.length > 0 ? (
+            <div
+                className={themeClass(theme, {
+                    dark: 'mt-6 rounded-2xl border border-zinc-800/80 bg-zinc-950/40 px-5 py-4 sm:px-6 sm:py-5',
+                    light: 'mt-6 rounded-2xl border border-zinc-200/90 bg-zinc-50/90 px-5 py-4 sm:px-6 sm:py-5',
+                })}
+            >
+                <p
+                    className={themeClass(theme, {
+                        dark: 'text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500',
+                        light: 'text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500',
+                    })}
+                >
+                    Автоинсайты
+                </p>
+                <ul className="mt-3 list-none space-y-2.5 p-0">
+                    {insights.map(ins => (
+                        <li key={ins.id} className="flex gap-2.5 text-sm leading-relaxed">
+                            <span
+                                className={themeClass(theme, {
+                                    dark: 'mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-400/90',
+                                    light: 'mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-500',
+                                })}
+                                aria-hidden
+                            />
+                            <span
+                                className={themeClass(theme, {
+                                    dark: 'text-zinc-300',
+                                    light: 'text-zinc-700',
+                                })}
+                            >
+                                {ins.text}
+                            </span>
+                        </li>
+                    ))}
+                </ul>
+            </div>
+        ) : null;
+
+    if (!heroItem && !secondaryItems.length) {
         return (
             <section className={sectionShell} aria-labelledby="kpi-section-title">
                 <header className="mb-8 sm:mb-10">
@@ -363,14 +392,6 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({ data, baselineDa
                     >
                         Обзор рынка
                     </h2>
-                    <p
-                        className={themeClass(theme, {
-                            dark: 'mt-2 max-w-2xl text-sm leading-relaxed text-zinc-400',
-                            light: 'mt-2 max-w-2xl text-sm leading-relaxed text-zinc-600',
-                        })}
-                    >
-                        {KPI_SECTION_LEAD}
-                    </p>
                 </header>
                 <div
                     className={themeClass(theme, {
@@ -380,13 +401,10 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({ data, baselineDa
                 >
                     Загрузите данные, чтобы увидеть статистику
                 </div>
+                {insightsBlock}
             </section>
         );
     }
-
-    const heroIdx = pickHeroCardIndex(items);
-    const heroItem = items[heroIdx]!;
-    const secondaryItems = items.filter((_, i) => i !== heroIdx);
 
     return (
         <section className={sectionShell} aria-labelledby="kpi-section-title">
@@ -400,74 +418,29 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({ data, baselineDa
                 >
                     Обзор рынка
                 </h2>
-                <p
-                    className={themeClass(theme, {
-                        dark: 'mt-2 max-w-2xl text-sm leading-relaxed text-zinc-400',
-                        light: 'mt-2 max-w-2xl text-sm leading-relaxed text-zinc-600',
-                    })}
-                >
-                    {KPI_SECTION_LEAD}
-                </p>
-                {insights.length > 0 && (
-                    <div
-                        className={themeClass(theme, {
-                            dark: 'mt-6 rounded-2xl border border-zinc-800/80 bg-zinc-950/40 px-5 py-4 sm:px-6 sm:py-5',
-                            light: 'mt-6 rounded-2xl border border-zinc-200/90 bg-zinc-50/90 px-5 py-4 sm:px-6 sm:py-5',
-                        })}
-                    >
-                        <p
-                            className={themeClass(theme, {
-                                dark: 'text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500',
-                                light: 'text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500',
-                            })}
-                        >
-                            Автоинсайты
-                        </p>
-                        <ul className="mt-3 list-none space-y-2.5 p-0">
-                            {insights.map(ins => (
-                                <li key={ins.id} className="flex gap-2.5 text-sm leading-relaxed">
-                                    <span
-                                        className={themeClass(theme, {
-                                            dark: 'mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-400/90',
-                                            light: 'mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-500',
-                                        })}
-                                        aria-hidden
-                                    />
-                                    <span
-                                        className={themeClass(theme, {
-                                            dark: 'text-zinc-300',
-                                            light: 'text-zinc-700',
-                                        })}
-                                    >
-                                        {ins.text}
-                                    </span>
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
-                )}
+                {insightsBlock}
             </header>
 
-            <div
-                className={
-                    secondaryItems.length === 0
-                        ? 'space-y-0'
-                        : 'flex flex-col gap-6 xl:flex-row xl:items-stretch xl:gap-8'
-                }
-            >
-                <div className={secondaryItems.length === 0 ? 'w-full' : 'min-w-0 shrink-0 xl:w-[42%] xl:max-w-xl'}>
-                    <KpiStatCard item={heroItem} theme={theme} variant="hero" />
-                </div>
-                {secondaryItems.length > 0 && (
-                    <div className="grid min-w-0 flex-1 grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 xl:grid-cols-2">
-                        {secondaryItems.map((item, idx) => (
-                            <React.Fragment key={`${item.label}-${idx}`}>
-                                <KpiStatCard item={item} theme={theme} variant="secondary" />
-                            </React.Fragment>
-                        ))}
+            {heroItem && (
+                <div className="flex flex-col gap-6 xl:flex-row xl:items-stretch xl:gap-8">
+                    <div className="min-w-0 shrink-0 xl:w-[42%] xl:max-w-xl">
+                        <KpiStatCard item={heroItem} theme={theme} colorScheme={colorScheme} variant="hero" />
                     </div>
-                )}
-            </div>
+                    {secondaryItems.length > 0 && (
+                        <div className="grid min-w-0 flex-1 grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5">
+                            {secondaryItems.map((item, idx) => (
+                                <KpiStatCard
+                                    key={`${item.label}-${idx}`}
+                                    item={item}
+                                    theme={theme}
+                                    colorScheme={colorScheme}
+                                    variant="secondary"
+                                />
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
         </section>
     );
 };

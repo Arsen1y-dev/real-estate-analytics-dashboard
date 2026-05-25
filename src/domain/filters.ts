@@ -1,6 +1,20 @@
 import { loadCachedDataset } from '@/cache';
 import type { DataRow, DataSummary, FilterSettings } from '@/types';
-import { isFiniteNumber } from '@/domain/dataset';
+import { rowPassesFiltersShared } from '../../shared/filters';
+import { mergeDatasetRows } from '../../shared/mergeDatasetRows';
+import { refreshSummaryFromData } from '@/domain/dataset';
+import { applyListingQualityFilter } from '@/domain/qualityFilter';
+
+type PersonalCacheState = {
+    allData: DataRow[] | null;
+    dataSummary: DataSummary | null;
+    filters: FilterSettings | null;
+    baselineFilters: FilterSettings | null;
+    fileKey: string | null;
+};
+
+let memoizedPersonalState: PersonalCacheState | null = null;
+let memoizedPersonalFileKey: string | null = null;
 
 /** Пустой `rooms` = без ограничения по комнатности (все планировки). */
 export function isRoomFilterActive(roomsFilter: number[], room: number): boolean {
@@ -12,12 +26,22 @@ export function createDefaultFiltersFromSummary(summary: DataSummary): FilterSet
         price: { ...summary.price },
         area: { ...summary.area },
         rooms: [],
+        yearBuilt: { ...summary.yearBuilt },
+        distanceKm: { ...summary.distanceKm },
+        floor: { ...summary.floor },
+        houseTypes: [],
+        excludeFirstFloor: false,
+        excludeLastFloor: false,
+        radiusKm: null,
+        additionalFilters: [],
     };
 }
 
 /** Пороги, как раньше на гистограммах: заметное отличие от базового диапазона файла. */
 const PRICE_FILTER_EPSILON = 0.5;
 const AREA_FILTER_EPSILON = 0.1;
+const YEAR_FILTER_EPSILON = 1;
+const DISTANCE_FILTER_EPSILON = 0.1;
 
 export function isPriceFilterDirty(filters: FilterSettings, baseline: FilterSettings): boolean {
     return (
@@ -43,59 +67,78 @@ export function isRoomsFilterDirty(filters: FilterSettings, baseline: FilterSett
 }
 
 export function isAnyFilterDirty(filters: FilterSettings, baseline: FilterSettings): boolean {
+    const additionalDirty =
+        filters.additionalFilters.length !== baseline.additionalFilters.length ||
+        filters.additionalFilters.some((item, idx) => {
+            const base = baseline.additionalFilters[idx];
+            if (!base) return true;
+            return (
+                item.column !== base.column ||
+                item.operator !== base.operator ||
+                item.value !== base.value ||
+                (item.valueTo ?? '') !== (base.valueTo ?? '')
+            );
+        });
     return (
         isPriceFilterDirty(filters, baseline) ||
         isAreaFilterDirty(filters, baseline) ||
-        isRoomsFilterDirty(filters, baseline)
+        isRoomsFilterDirty(filters, baseline) ||
+        Math.abs(filters.yearBuilt.min - baseline.yearBuilt.min) > YEAR_FILTER_EPSILON ||
+        Math.abs(filters.yearBuilt.max - baseline.yearBuilt.max) > YEAR_FILTER_EPSILON ||
+        Math.abs(filters.distanceKm.min - baseline.distanceKm.min) > DISTANCE_FILTER_EPSILON ||
+        Math.abs(filters.distanceKm.max - baseline.distanceKm.max) > DISTANCE_FILTER_EPSILON ||
+        filters.excludeFirstFloor !== baseline.excludeFirstFloor ||
+        filters.excludeLastFloor !== baseline.excludeLastFloor ||
+        (filters.radiusKm ?? null) !== (baseline.radiusKm ?? null) ||
+        filters.houseTypes.length !== baseline.houseTypes.length ||
+        additionalDirty
     );
 }
 
 export function rowPassesFilters(row: DataRow, filters: FilterSettings, summary: DataSummary): boolean {
-    const c = summary.coreColumnMap;
-
-    if (c.price) {
-        const v = row[c.price];
-        if (!isFiniteNumber(v)) return false;
-        if (v < filters.price.min || v > filters.price.max) return false;
-    }
-
-    if (c.area) {
-        const v = row[c.area];
-        if (!isFiniteNumber(v)) return false;
-        if (v < filters.area.min || v > filters.area.max) return false;
-    }
-
-    if (c.rooms) {
-        const v = row[c.rooms];
-        const num = typeof v === 'number' ? v : Number.parseFloat(String(v));
-        if (!Number.isFinite(num)) return false;
-        const rounded = Math.round(num);
-        if (filters.rooms.length > 0 && !filters.rooms.includes(rounded)) return false;
-    }
-
-    return true;
+    return rowPassesFiltersShared(row, filters, summary);
 }
 
-export function readInitialAppState(): {
+export function readPersonalCacheState(): {
     allData: DataRow[] | null;
     dataSummary: DataSummary | null;
     filters: FilterSettings | null;
     baselineFilters: FilterSettings | null;
+    fileKey: string | null;
 } {
     if (typeof window === 'undefined') {
-        return { allData: null, dataSummary: null, filters: null, baselineFilters: null };
+        return { allData: null, dataSummary: null, filters: null, baselineFilters: null, fileKey: null };
     }
     const cached = loadCachedDataset();
     if (!cached) {
-        return { allData: null, dataSummary: null, filters: null, baselineFilters: null };
+        memoizedPersonalState = null;
+        memoizedPersonalFileKey = null;
+        return { allData: null, dataSummary: null, filters: null, baselineFilters: null, fileKey: null };
     }
-    const f = createDefaultFiltersFromSummary(cached.summary);
-    return {
-        allData: cached.data,
-        dataSummary: cached.summary,
+    if (memoizedPersonalState && memoizedPersonalFileKey === cached.fileKey) {
+        return memoizedPersonalState;
+    }
+    const { rows: mergedRows } = mergeDatasetRows(cached.data);
+    const mergedSummary = refreshSummaryFromData(mergedRows, cached.summary);
+    const { rows: qualityRows } = applyListingQualityFilter(mergedRows, mergedSummary);
+    const dataSummary = refreshSummaryFromData(qualityRows, mergedSummary);
+    const f = createDefaultFiltersFromSummary(dataSummary);
+    const computed: PersonalCacheState = {
+        allData: qualityRows,
+        dataSummary,
         filters: f,
         baselineFilters: f,
+        fileKey: cached.fileKey,
     };
+    memoizedPersonalFileKey = cached.fileKey;
+    memoizedPersonalState = computed;
+    return computed;
 }
 
-export const INITIAL_APP_STATE = readInitialAppState();
+/** Начальное состояние без данных — гидратация после входа по роли и источнику. */
+export const INITIAL_APP_STATE = {
+    allData: null as DataRow[] | null,
+    dataSummary: null as DataSummary | null,
+    filters: null as FilterSettings | null,
+    baselineFilters: null as FilterSettings | null,
+};

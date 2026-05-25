@@ -1,0 +1,5 @@
+selenium>=4.20
+webdriver-manager>=4.0
+pandas>=2.0
+dash>=2.16
+plotly>=5.20

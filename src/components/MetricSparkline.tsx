@@ -1,6 +1,6 @@
 import React from 'react';
 import type { Theme } from '@/theme';
-import { themeClass } from '@/theme';
+import { themeClass, sparklineStroke } from '@/theme';
 import { sparklinePathFromValues } from '@/utils/sparkline';
 
 export type MetricSparklineSize = 'default' | 'hero';
@@ -29,7 +29,7 @@ export const MetricSparkline: React.FC<{ values: number[]; theme: Theme; size?: 
         );
     }
 
-    const strokeColor = theme === 'dark' ? 'rgba(129, 140, 248, 0.92)' : 'rgba(79, 70, 229, 0.88)';
+    const strokeColor = sparklineStroke(theme);
 
     return (
         <svg

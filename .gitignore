@@ -22,3 +22,15 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local secrets (never commit)
+.env
+.env.*.local
+.env.local
+
+# Vendored parser runtime
+parser/.venv
+parser/data/**/*
+!parser/data/**/.gitkeep
+parser/pipeline/.tmp_*
+server/data/parser-jobs/*.log

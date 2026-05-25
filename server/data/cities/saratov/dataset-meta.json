@@ -1,0 +1,27 @@
+{
+  "rowCount": 75,
+  "updatedAt": "2026-05-24T19:00:57.876Z",
+  "lastFileName": "pipeline:processed_apartment_data.csv",
+  "uploads": [
+    {
+      "batchId": "f7e338f6-dc41-4618-9b28-9abf96c11331",
+      "at": "2026-05-24T17:35:24.248Z",
+      "fileName": "pipeline:processed_apartment_data.csv",
+      "added": 11,
+      "skippedDuplicates": 9,
+      "tooFarFiltered": 0,
+      "droppedInvalid": 0,
+      "mode": "append"
+    },
+    {
+      "batchId": "207bd75a-a2e4-4773-808b-0cfacb250fc2",
+      "at": "2026-05-24T19:00:57.868Z",
+      "fileName": "pipeline:processed_apartment_data.csv",
+      "added": 64,
+      "skippedDuplicates": 31,
+      "tooFarFiltered": 0,
+      "droppedInvalid": 0,
+      "mode": "append"
+    }
+  ]
+}

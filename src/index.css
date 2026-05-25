@@ -17,47 +17,24 @@ body {
     min-height: 100%;
 }
 
-/* Скроллбар: тёмная тема по умолчанию, светлая при data-theme на <html> */
-html[data-theme='dark'] ::-webkit-scrollbar,
-html:not([data-theme]) ::-webkit-scrollbar {
+/* Скроллбар: токены из theme.css (scheme × mode) */
+html[data-theme] ::-webkit-scrollbar {
     width: 10px;
     height: 10px;
 }
 
-html[data-theme='dark'] ::-webkit-scrollbar-track,
-html:not([data-theme]) ::-webkit-scrollbar-track {
-    background: rgb(9 9 11);
+html[data-theme] ::-webkit-scrollbar-track {
+    background: var(--ui-scrollbar-track);
 }
 
-html[data-theme='dark'] ::-webkit-scrollbar-thumb,
-html:not([data-theme]) ::-webkit-scrollbar-thumb {
-    background: rgb(63 63 70);
+html[data-theme] ::-webkit-scrollbar-thumb {
+    background: var(--ui-scrollbar-thumb);
     border-radius: 6px;
-    border: 2px solid rgb(9 9 11);
+    border: 2px solid var(--ui-scrollbar-track);
 }
 
-html[data-theme='dark'] ::-webkit-scrollbar-thumb:hover,
-html:not([data-theme]) ::-webkit-scrollbar-thumb:hover {
-    background: rgb(82 82 91);
-}
-
-html[data-theme='light'] ::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-}
-
-html[data-theme='light'] ::-webkit-scrollbar-track {
-    background: rgb(250 250 250);
-}
-
-html[data-theme='light'] ::-webkit-scrollbar-thumb {
-    background: rgb(212 212 216);
-    border-radius: 6px;
-    border: 2px solid rgb(250 250 250);
-}
-
-html[data-theme='light'] ::-webkit-scrollbar-thumb:hover {
-    background: rgb(161 161 170);
+html[data-theme] ::-webkit-scrollbar-thumb:hover {
+    background: var(--ui-scrollbar-thumb-hover);
 }
 
 /* Двойной range-слайдер (фильтры): трек прозрачный, события — только у ползунков */
@@ -113,22 +90,12 @@ html[data-theme='light'] ::-webkit-scrollbar-thumb:hover {
         0 0 0 1px rgba(0, 0, 0, 0.12);
 }
 
-html[data-theme='dark'] .filter-dual-range input[type='range']::-webkit-slider-thumb {
-    background: rgb(129 140 248);
-    border-color: rgb(199 210 254 / 0.45);
+html[data-theme] .filter-dual-range input[type='range']::-webkit-slider-thumb {
+    background: var(--ui-range-thumb);
+    border-color: rgb(255 255 255 / 0.85);
 }
 
-html[data-theme='dark'] .filter-dual-range input[type='range']::-moz-range-thumb {
-    background: rgb(129 140 248);
-    border-color: rgb(199 210 254 / 0.45);
-}
-
-html[data-theme='light'] .filter-dual-range input[type='range']::-webkit-slider-thumb {
-    background: rgb(79 70 229);
-    border-color: rgb(255 255 255);
-}
-
-html[data-theme='light'] .filter-dual-range input[type='range']::-moz-range-thumb {
-    background: rgb(79 70 229);
-    border-color: rgb(255 255 255);
+html[data-theme] .filter-dual-range input[type='range']::-moz-range-thumb {
+    background: var(--ui-range-thumb);
+    border-color: rgb(255 255 255 / 0.85);
 }

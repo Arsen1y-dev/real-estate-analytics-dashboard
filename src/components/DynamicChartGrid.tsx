@@ -1,20 +1,27 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Brush } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Brush } from 'recharts';
 import { ScatterChartView } from '@/components/charts/ScatterChartView';
+import { MeasuredResponsiveContainer } from '@/components/charts/MeasuredResponsiveContainer';
 import type { DataRow, DataSummary, UserChartDefinition } from '@/types';
-import type { Theme } from '@/theme';
-import { themeClass, CHART_FILL, BAR_OPACITY_INACTIVE } from '@/theme';
+import type { ColorScheme, Theme } from '@/theme';
+import { themeClass, chartFillColor, chartAccentStroke, BAR_OPACITY_INACTIVE } from '@/theme';
 import { formatNumber } from '@/utils/format';
 import { median, quantile } from '@/utils/stats';
 import { sampleArray, MAX_SCATTER_POINTS } from '@/utils/sample';
 import { isFiniteNumber } from '@/domain/dataset';
 import { canonicalCategoryKey, formatCategoryValue, formatColumnLabel, truncateDisplayLabel } from '@/utils/displayLabel';
+import {
+    isCategoryBarsColumnAllowed,
+    isHistogramColumnAllowed,
+    isScatterAxisColumnAllowed,
+} from '@/domain/chartColumnRules';
 import { ChartCard } from '@/components/ChartCard';
 import { EmptyChartState } from '@/components/EmptyChartState';
 import { CloseIcon } from '@/components/icons';
 import { exportElementToPdf, exportElementToPng, slugifyFilenamePart } from '@/utils/chartExport';
 
 const CATEGORY_DISPLAY_LIMIT = 35;
+const IS_DEV = import.meta.env.DEV;
 
 interface BinRange {
     min: number;
@@ -121,7 +128,8 @@ export const DynamicChartGrid: React.FC<{
     charts: UserChartDefinition[];
     summary: DataSummary;
     theme: Theme;
-}> = ({ data, charts, summary, theme }) => {
+    colorScheme: ColorScheme;
+}> = React.memo(function DynamicChartGrid({ data, charts, summary, theme, colorScheme }) {
     const [expanded, setExpanded] = useState<UserChartDefinition | null>(null);
     const expandedExportRef = useRef<HTMLDivElement>(null);
     const [expandedExportBusy, setExpandedExportBusy] = useState(false);
@@ -214,7 +222,8 @@ export const DynamicChartGrid: React.FC<{
         [expanded?.title, expandedExportBusy, theme]
     );
 
-    const chartFillColor = CHART_FILL[theme];
+    const fillColor = chartFillColor(theme, colorScheme);
+    const accentStroke = chartAccentStroke(theme, colorScheme);
     const axisTextColor = theme === 'dark' ? '#a1a1aa' : '#52525b';
     const gridColor = theme === 'dark' ? '#27272a' : '#e4e4e7';
     const tooltipStyle = theme === 'dark'
@@ -229,45 +238,110 @@ export const DynamicChartGrid: React.FC<{
         return m;
     }, [summary.columns]);
 
+    const histogramColumns = useMemo(
+        () =>
+            charts
+                .filter(c => c.type === 'histogram')
+                .map(c => c.column)
+                .filter((col, index, arr) => {
+                    if (arr.indexOf(col) !== index) return false;
+                    const kind = kindByColumn.get(col);
+                    return Boolean(kind && isHistogramColumnAllowed({ name: col, kind }));
+                }),
+        [charts, kindByColumn]
+    );
+
     const histogramValuesByColumn = useMemo(() => {
-        const needed = new Set<string>(
-            charts.filter(c => c.type === 'histogram').map(c => c.column).filter(col => kindByColumn.get(col) === 'numeric')
-        );
+        const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
         const out = new Map<string, number[]>();
-        for (const col of needed) {
-            out.set(col, data.map(d => d[col]).filter(isFiniteNumber));
+        if (!histogramColumns.length) return out;
+        for (const col of histogramColumns) out.set(col, []);
+        for (const row of data) {
+            for (const col of histogramColumns) {
+                const value = row[col];
+                if (isFiniteNumber(value)) out.get(col)!.push(value);
+            }
+        }
+        if (IS_DEV) {
+            const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt;
+            if (elapsed > 4) {
+                // eslint-disable-next-line no-console
+                console.info('[perf] charts:histogram-values', {
+                    rows: data.length,
+                    columns: histogramColumns.length,
+                    elapsedMs: Number(elapsed.toFixed(1)),
+                });
+            }
         }
         return out;
-    }, [charts, data, kindByColumn]);
+    }, [data, histogramColumns]);
 
     const scatterRawByChartId = useMemo(() => {
+        const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
         const out = new Map<string, Array<{ x: number; y: number }>>();
         for (const def of charts) {
             if (def.type !== 'scatter') continue;
             const xCol = def.xColumn ?? def.column;
             const yCol = def.yColumn;
-            if (!yCol || kindByColumn.get(xCol) !== 'numeric' || kindByColumn.get(yCol) !== 'numeric') continue;
-            const raw = data
-                .map(d => {
-                    const x = d[xCol];
-                    const y = d[yCol];
-                    if (!isFiniteNumber(x) || !isFiniteNumber(y)) return null;
-                    return { x, y };
-                })
-                .filter(Boolean) as Array<{ x: number; y: number }>;
+            const xKind = kindByColumn.get(xCol);
+            const yKind = yCol ? kindByColumn.get(yCol) : null;
+            if (
+                !yCol ||
+                !xKind ||
+                !yKind ||
+                !isScatterAxisColumnAllowed({ name: xCol, kind: xKind }) ||
+                !isScatterAxisColumnAllowed({ name: yCol, kind: yKind })
+            ) {
+                continue;
+            }
+            const raw: Array<{ x: number; y: number }> = [];
+            for (const row of data) {
+                const x = row[xCol];
+                const y = row[yCol];
+                if (!isFiniteNumber(x) || !isFiniteNumber(y)) continue;
+                raw.push({ x, y });
+            }
             out.set(def.id, raw);
+        }
+        if (IS_DEV) {
+            const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt;
+            if (elapsed > 4) {
+                // eslint-disable-next-line no-console
+                console.info('[perf] charts:scatter-values', {
+                    rows: data.length,
+                    charts: charts.filter(c => c.type === 'scatter').length,
+                    elapsedMs: Number(elapsed.toFixed(1)),
+                });
+            }
         }
         return out;
     }, [charts, data, kindByColumn]);
 
+    const categoryColumns = useMemo(
+        () =>
+            charts
+                .filter(c => c.type === 'categoryBars')
+                .map(c => c.column)
+                .filter((col, index, arr) => {
+                    if (arr.indexOf(col) !== index) return false;
+                    const kind = kindByColumn.get(col);
+                    return Boolean(kind && isCategoryBarsColumnAllowed({ name: col, kind }, summary));
+                }),
+        [charts, kindByColumn, summary]
+    );
+
     const categoryEntriesByColumn = useMemo(() => {
-        const needed = new Set<string>(
-            charts.filter(c => c.type === 'categoryBars').map(c => c.column).filter(col => kindByColumn.get(col) === 'categorical')
-        );
+        const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
         const out = new Map<string, Array<{ canonical: string; fullLabel: string; count: number }>>();
-        for (const col of needed) {
-            const counts = new Map<string, { count: number; fullLabel: string }>();
-            for (const row of data) {
+        if (!categoryColumns.length) return out;
+        const countsByColumn = new Map<string, Map<string, { count: number; fullLabel: string }>>();
+        for (const col of categoryColumns) {
+            countsByColumn.set(col, new Map<string, { count: number; fullLabel: string }>());
+        }
+        for (const row of data) {
+            for (const col of categoryColumns) {
+                const counts = countsByColumn.get(col);
+                if (!counts) continue;
                 const v = row[col];
                 const canonical = canonicalCategoryKey(v);
                 const fullLabel = formatCategoryValue(v);
@@ -281,6 +355,9 @@ export const DynamicChartGrid: React.FC<{
                     fullLabel: fullLabel.length > prev.fullLabel.length ? fullLabel : prev.fullLabel,
                 });
             }
+        }
+        for (const col of categoryColumns) {
+            const counts = countsByColumn.get(col) ?? new Map<string, { count: number; fullLabel: string }>();
             out.set(
                 col,
                 Array.from(counts.entries())
@@ -288,14 +365,29 @@ export const DynamicChartGrid: React.FC<{
                     .sort((a, b) => b.count - a.count)
             );
         }
+        if (IS_DEV) {
+            const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt;
+            if (elapsed > 4) {
+                // eslint-disable-next-line no-console
+                console.info('[perf] charts:category-values', {
+                    rows: data.length,
+                    columns: categoryColumns.length,
+                    elapsedMs: Number(elapsed.toFixed(1)),
+                });
+            }
+        }
         return out;
-    }, [charts, data, kindByColumn]);
+    }, [categoryColumns, data]);
 
-    const renderChart = (def: UserChartDefinition): { content: React.ReactNode; analysis?: string; hasData: boolean } => {
+    const renderChart = (
+        def: UserChartDefinition,
+        isExpandedMode = false
+    ): { content: React.ReactNode; analysis?: string; hasData: boolean } => {
         if (def.type === 'histogram') {
             const col = def.column;
-            if (kindByColumn.get(col) !== 'numeric') {
-                return { content: <EmptyChartState theme={theme} message={`Столбец «${col}» не числовой`} />, hasData: false };
+            const colKind = kindByColumn.get(col);
+            if (!colKind || !isHistogramColumnAllowed({ name: col, kind: colKind })) {
+                return { content: <EmptyChartState theme={theme} message={`Столбец «${col}» не подходит для гистограммы`} />, hasData: false };
             }
             const values = histogramValuesByColumn.get(col) ?? [];
             if (!values.length) {
@@ -368,8 +460,8 @@ export const DynamicChartGrid: React.FC<{
                                 Весь диапазон
                             </button>
                         )}
-                        <div className="relative h-full min-h-[12rem] w-full min-w-0 flex-1">
-                            <ResponsiveContainer width="100%" height="100%">
+                        <div className="relative h-full min-h-[18rem] w-full min-w-0 flex-1">
+                            <MeasuredResponsiveContainer minWidth={280} minHeight={280}>
                                 <BarChart data={distribution} margin={{ top: 12, right: 20, left: 14, bottom: 50 }}>
                                     <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
                                     <XAxis
@@ -419,7 +511,7 @@ export const DynamicChartGrid: React.FC<{
                                     />
                                     <Bar
                                         dataKey="count"
-                                        fill={chartFillColor}
+                                        fill={fillColor}
                                         fillOpacity={BAR_OPACITY_INACTIVE + 0.15}
                                         cursor="pointer"
                                         radius={[4, 4, 0, 0]}
@@ -438,7 +530,7 @@ export const DynamicChartGrid: React.FC<{
                                     <Brush
                                         dataKey="name"
                                         height={26}
-                                        stroke={theme === 'dark' ? '#818cf8' : '#6366f1'}
+                                        stroke={accentStroke}
                                         fill={brushFillHist}
                                         fillOpacity={0.62}
                                         travellerWidth={10}
@@ -464,7 +556,7 @@ export const DynamicChartGrid: React.FC<{
                                         }}
                                     />
                                 </BarChart>
-                            </ResponsiveContainer>
+                            </MeasuredResponsiveContainer>
                         </div>
                     </div>
                 ),
@@ -474,8 +566,16 @@ export const DynamicChartGrid: React.FC<{
         if (def.type === 'scatter') {
             const xCol = def.xColumn ?? def.column;
             const yCol = def.yColumn;
-            if (!yCol || kindByColumn.get(xCol) !== 'numeric' || kindByColumn.get(yCol) !== 'numeric') {
-                return { content: <EmptyChartState theme={theme} message="Нужны два числовых столбца" />, hasData: false };
+            const xKind = kindByColumn.get(xCol);
+            const yKind = yCol ? kindByColumn.get(yCol) : null;
+            if (
+                !yCol ||
+                !xKind ||
+                !yKind ||
+                !isScatterAxisColumnAllowed({ name: xCol, kind: xKind }) ||
+                !isScatterAxisColumnAllowed({ name: yCol, kind: yKind })
+            ) {
+                return { content: <EmptyChartState theme={theme} message="Нужны две валидные числовые оси (без техполей)" />, hasData: false };
             }
             const raw = scatterRawByChartId.get(def.id) ?? [];
             const scatterData = sampleArray(raw, MAX_SCATTER_POINTS);
@@ -492,18 +592,20 @@ export const DynamicChartGrid: React.FC<{
                         raw={raw}
                         displayPoints={scatterData}
                         theme={theme}
-                        chartFillColor={chartFillColor}
+                        chartFillColor={fillColor}
                         axisTextColor={axisTextColor}
                         scatterGridColor={scatterGridColor}
                         tooltipStyle={tooltipStyle}
+                        isFullscreen={isExpandedMode}
                     />
                 ),
             };
         }
 
         const col = def.column;
-        if (kindByColumn.get(col) !== 'categorical') {
-            return { content: <EmptyChartState theme={theme} message={`Столбец «${col}» не категориальный (по авто-оценке)`} />, hasData: false };
+        const colKind = kindByColumn.get(col);
+        if (!colKind || !isCategoryBarsColumnAllowed({ name: col, kind: colKind }, summary)) {
+            return { content: <EmptyChartState theme={theme} message={`Столбец «${col}» не подходит для категориального графика`} />, hasData: false };
         }
         const entries = categoryEntriesByColumn.get(col) ?? [];
         let barData: Array<{ rawName: string; axisLabel: string; fullLabel: string; count: number }>;
@@ -561,7 +663,7 @@ export const DynamicChartGrid: React.FC<{
             hasData: barData.length > 0,
             analysis,
             content: (
-                <div className="relative h-full min-h-[12rem] w-full min-w-0 flex-1">
+                <div className="relative h-full min-h-[18rem] w-full min-w-0 flex-1">
                     {barData.length > 1 && categoryWindow && (
                         <button
                             type="button"
@@ -574,7 +676,7 @@ export const DynamicChartGrid: React.FC<{
                             Весь диапазон
                         </button>
                     )}
-                    <ResponsiveContainer width="100%" height="100%">
+                    <MeasuredResponsiveContainer minWidth={280} minHeight={280}>
                         <BarChart
                             data={barData}
                             layout="vertical"
@@ -619,12 +721,12 @@ export const DynamicChartGrid: React.FC<{
                                     );
                                 }}
                             />
-                            <Bar dataKey="count" fill={chartFillColor} fillOpacity={BAR_OPACITY_INACTIVE + 0.2} radius={[0, 4, 4, 0]} />
+                            <Bar dataKey="count" fill={fillColor} fillOpacity={BAR_OPACITY_INACTIVE + 0.2} radius={[0, 4, 4, 0]} />
                             {barData.length > 1 && (
                                 <Brush
                                     dataKey="rawName"
                                     height={26}
-                                    stroke={theme === 'dark' ? '#818cf8' : '#6366f1'}
+                                    stroke={accentStroke}
                                     fill={brushFillCategory}
                                     fillOpacity={0.62}
                                     travellerWidth={10}
@@ -645,7 +747,7 @@ export const DynamicChartGrid: React.FC<{
                                 />
                             )}
                         </BarChart>
-                    </ResponsiveContainer>
+                    </MeasuredResponsiveContainer>
                 </div>
             ),
         };
@@ -666,7 +768,7 @@ export const DynamicChartGrid: React.FC<{
         );
     }
 
-    const expandedRendered = expanded ? renderChart(expanded) : null;
+    const expandedRendered = expanded ? renderChart(expanded, true) : null;
     const displayChartTitle = (def: UserChartDefinition): string => {
         if (def.type !== 'categoryBars') return def.title;
         if (def.title.startsWith('По категориям:')) {
@@ -678,7 +780,7 @@ export const DynamicChartGrid: React.FC<{
 
     return (
         <>
-            <div className="grid auto-rows-[minmax(340px,auto)] grid-cols-1 gap-4 sm:grid-cols-[repeat(auto-fit,minmax(min(100%,17.5rem),1fr))] sm:gap-5">
+            <div className="grid min-w-0 auto-rows-[minmax(340px,auto)] grid-cols-1 gap-4 sm:grid-cols-[repeat(auto-fit,minmax(min(100%,17.5rem),1fr))] sm:gap-5">
                 {charts.map(def => {
                     const { content, analysis, hasData } = renderChart(def);
                     return (
@@ -815,4 +917,4 @@ export const DynamicChartGrid: React.FC<{
             )}
         </>
     );
-};
+});

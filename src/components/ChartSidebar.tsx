@@ -13,6 +13,7 @@ import {
 import { GripVerticalIcon } from '@/components/icons';
 import { ColumnSearchSelect, type ColumnQuickPick } from '@/components/ColumnSearchSelect';
 import { formatColumnLabel } from '@/utils/displayLabel';
+import { getCategoryBarsColumns, getHistogramColumns, getScatterColumns } from '@/domain/chartColumnRules';
 
 const CHART_TYPE_LABELS: Record<UserChartType, { label: string; hint: string }> = {
     histogram: { label: 'Гистограмма', hint: 'Распределение числового столбца' },
@@ -48,11 +49,9 @@ export const ChartSidebar: React.FC<{
     disabled?: boolean;
     theme: Theme;
 }> = ({ summary, charts, onChange, disabled, theme }) => {
-    const numericCols = useMemo(() => summary.columns.filter(c => c.kind === 'numeric').map(c => c.name), [summary.columns]);
-    const categoricalCols = useMemo(
-        () => summary.columns.filter(c => c.kind === 'categorical' && c.name !== 'houseType').map(c => c.name),
-        [summary.columns]
-    );
+    const numericCols = useMemo(() => getHistogramColumns(summary), [summary]);
+    const scatterCols = useMemo(() => getScatterColumns(summary), [summary]);
+    const categoryCols = useMemo(() => getCategoryBarsColumns(summary), [summary]);
 
     const popularQuickPicks = useMemo((): ColumnQuickPick[] => {
         const c = summary.coreColumnMap;
@@ -79,8 +78,8 @@ export const ChartSidebar: React.FC<{
     }, [chartType]);
 
     const canAddHistogram = numericCols.length > 0;
-    const canAddScatter = numericCols.length >= 2;
-    const canAddCategory = categoricalCols.length > 0;
+    const canAddScatter = scatterCols.length >= 2;
+    const canAddCategory = categoryCols.length > 0;
 
     const addChart = () => {
         if (chartType === 'histogram') {
@@ -96,8 +95,8 @@ export const ChartSidebar: React.FC<{
                 },
             ]);
         } else if (chartType === 'scatter') {
-            const x = xColumn || numericCols[0];
-            const y = yColumn || numericCols[1];
+            const x = xColumn || scatterCols[0];
+            const y = yColumn || scatterCols[1];
             if (!x || !y || x === y) return;
             onChange([
                 ...charts,
@@ -110,8 +109,8 @@ export const ChartSidebar: React.FC<{
                     title: title.trim() || `${x} × ${y}`,
                 },
             ]);
-        } else {
-            const col = column || categoricalCols[0];
+        } else if (chartType === 'categoryBars') {
+            const col = column || categoryCols[0];
             if (!col) return;
             onChange([
                 ...charts,
@@ -174,8 +173,8 @@ export const ChartSidebar: React.FC<{
     };
 
     const shell = themeClass(theme, {
-        dark: 'flex flex-col gap-7 rounded-3xl border border-zinc-800/85 bg-zinc-950/70 p-5 shadow-[0_1px_3px_rgba(0,0,0,0.2)] backdrop-blur-md sm:p-7',
-        light: 'flex flex-col gap-7 rounded-3xl border border-zinc-200/95 bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04),0_12px_40px_-12px_rgba(0,0,0,0.06)] backdrop-blur-md sm:p-7',
+        dark: 'flex h-full min-w-0 max-h-[min(100vh-10rem,56rem)] flex-col gap-7 overflow-x-hidden overflow-y-auto rounded-3xl border border-zinc-800/85 bg-zinc-950/70 p-5 shadow-[0_1px_3px_rgba(0,0,0,0.2)] backdrop-blur-md sm:p-7 lg:max-h-[calc(100vh-8rem)]',
+        light: 'flex h-full min-w-0 max-h-[min(100vh-10rem,56rem)] flex-col gap-7 overflow-x-hidden overflow-y-auto rounded-3xl border border-zinc-200/95 bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04),0_12px_40px_-12px_rgba(0,0,0,0.06)] backdrop-blur-md sm:p-7 lg:max-h-[calc(100vh-8rem)]',
     });
 
     return (
@@ -402,9 +401,9 @@ export const ChartSidebar: React.FC<{
                         })}
                     >
                         {chartType === 'histogram' && `Список: только числовые · ${numericCols.length} шт.`}
-                        {chartType === 'scatter' && `Список: только числовые · ${numericCols.length} шт.`}
+                        {chartType === 'scatter' && `Список: только числовые · ${scatterCols.length} шт.`}
                         {chartType === 'categoryBars' &&
-                            `Список: только категориальные · ${categoricalCols.length} шт.`}
+                            `Список: категориальные/дискретные · ${categoryCols.length} шт.`}
                     </p>
                 </div>
 
@@ -433,13 +432,13 @@ export const ChartSidebar: React.FC<{
                         <ColumnSearchSelect
                             id="scatter-x-select"
                             label="Ось X"
-                            options={numericCols}
-                            value={xColumn || numericCols[0] || ''}
+                            options={scatterCols}
+                            value={xColumn || scatterCols[0] || ''}
                             disabled={disabled || !canAddScatter}
                             onChange={setXColumn}
                             theme={theme}
                             searchPlaceholder="Поиск среди числовых столбцов…"
-                            quickPicks={popularQuickPicks.filter(p => numericCols.includes(p.column))}
+                            quickPicks={popularQuickPicks.filter(p => scatterCols.includes(p.column))}
                             renderOptionLabel={formatColumnLabel}
                             emptyText={
                                 canAddScatter ? 'Нет совпадений' : 'Нужно минимум два числовых столбца'
@@ -448,13 +447,13 @@ export const ChartSidebar: React.FC<{
                         <ColumnSearchSelect
                             id="scatter-y-select"
                             label="Ось Y"
-                            options={numericCols}
-                            value={yColumn || numericCols[1] || numericCols[0] || ''}
+                            options={scatterCols}
+                            value={yColumn || scatterCols[1] || scatterCols[0] || ''}
                             disabled={disabled || !canAddScatter}
                             onChange={setYColumn}
                             theme={theme}
                             searchPlaceholder="Поиск среди числовых столбцов…"
-                            quickPicks={popularQuickPicks.filter(p => numericCols.includes(p.column))}
+                            quickPicks={popularQuickPicks.filter(p => scatterCols.includes(p.column))}
                             renderOptionLabel={formatColumnLabel}
                             emptyText={
                                 canAddScatter ? 'Нет совпадений' : 'Нужно минимум два числовых столбца'
@@ -467,16 +466,16 @@ export const ChartSidebar: React.FC<{
                     <ColumnSearchSelect
                         id="category-column-select"
                         label="Категория"
-                        options={categoricalCols}
-                        value={column || categoricalCols[0] || ''}
+                        options={categoryCols}
+                        value={column || categoryCols[0] || ''}
                         disabled={disabled || !canAddCategory}
                         onChange={setColumn}
                         theme={theme}
-                        searchPlaceholder="Поиск среди категориальных столбцов…"
-                        quickPicks={popularQuickPicks.filter(p => categoricalCols.includes(p.column))}
+                        searchPlaceholder="Поиск среди категориальных и дискретных столбцов…"
+                        quickPicks={popularQuickPicks.filter(p => categoryCols.includes(p.column))}
                         renderOptionLabel={formatColumnLabel}
                         emptyText={
-                            canAddCategory ? 'Нет совпадений' : 'Нет категориальных столбцов в данных'
+                            canAddCategory ? 'Нет совпадений' : 'Нет подходящих категориальных/дискретных столбцов'
                         }
                     />
                 )}

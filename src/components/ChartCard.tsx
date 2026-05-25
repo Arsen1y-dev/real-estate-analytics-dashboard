@@ -38,8 +38,8 @@ export const ChartCard: React.FC<{
             }
             title={onExpand ? 'Открыть крупнее — экспорт PNG/PDF в полноэкранном окне' : undefined}
             className={`${themeClass(theme, {
-                dark: 'group relative flex min-h-[360px] h-[min(28rem,55vh)] flex-col overflow-hidden rounded-3xl border border-zinc-800/80 bg-zinc-950/60 p-5 shadow-[0_1px_3px_rgba(0,0,0,0.25)] transition hover:border-zinc-700 hover:shadow-[0_8px_30px_-8px_rgba(0,0,0,0.45)] sm:min-h-[400px] sm:h-[min(32rem,50vh)] sm:p-6',
-                light: 'group relative flex min-h-[360px] h-[min(28rem,55vh)] flex-col overflow-hidden rounded-3xl border border-zinc-200/90 bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04),0_12px_32px_-12px_rgba(0,0,0,0.06)] transition hover:border-zinc-300/90 sm:min-h-[400px] sm:h-[min(32rem,50vh)] sm:p-6',
+                dark: 'group relative flex min-h-[360px] min-w-0 h-[min(28rem,55vh)] flex-col overflow-hidden rounded-3xl border border-zinc-800/80 bg-zinc-950/60 p-5 shadow-[0_1px_3px_rgba(0,0,0,0.25)] transition hover:border-zinc-700 hover:shadow-[0_8px_30px_-8px_rgba(0,0,0,0.45)] sm:min-h-[400px] sm:h-[min(32rem,50vh)] sm:p-6',
+                light: 'group relative flex min-h-[360px] min-w-0 h-[min(28rem,55vh)] flex-col overflow-hidden rounded-3xl border border-zinc-200/90 bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04),0_12px_32px_-12px_rgba(0,0,0,0.06)] transition hover:border-zinc-300/90 sm:min-h-[400px] sm:h-[min(32rem,50vh)] sm:p-6',
             })} ${onExpand ? 'cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/35 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent' : ''}`}
         >
             <div
@@ -56,7 +56,7 @@ export const ChartCard: React.FC<{
                     light: 'absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100 bg-indigo-500/[0.03] no-export',
                 })}
             />
-            <div className="relative z-10 flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+            <div className="relative z-10 flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
                 <div
                     className={`flex min-h-0 flex-1 flex-col overflow-hidden ${themeClass(theme, {
                         dark: 'rounded-2xl bg-zinc-950/40',
@@ -96,8 +96,8 @@ export const ChartCard: React.FC<{
                             </div>
                         )}
                     </div>
-                    <div className="pointer-events-auto relative z-0 min-h-0 flex-1 overflow-hidden">
-                        <div className="flex h-full min-h-[12rem] min-w-0 flex-col gap-2 sm:min-h-[14rem] sm:gap-3">{children}</div>
+                    <div className="pointer-events-auto relative z-0 min-h-0 min-w-0 flex-1 overflow-hidden">
+                        <div className="flex h-full min-h-[16rem] min-w-0 flex-col gap-2 sm:min-h-[18rem] sm:gap-3">{children}</div>
                     </div>
                 </div>
                 {footer ? (

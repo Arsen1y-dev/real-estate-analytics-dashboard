@@ -9,8 +9,9 @@ function ShimmerBlock({ className }: { className: string }) {
     );
 }
 
-export const DashboardSkeleton: React.FC = () => (
+export const DashboardSkeleton: React.FC<{ message?: string }> = ({ message = 'Загрузка дашборда…' }) => (
     <div className="min-h-screen bg-zinc-950 px-5 py-10 sm:px-8 lg:px-12">
+        <p className="mx-auto mb-6 max-w-[1580px] text-center text-sm font-medium text-zinc-400">{message}</p>
         <div className="mx-auto max-w-[1580px] space-y-10">
             <div className="rounded-[1.75rem] border border-zinc-800/80 bg-zinc-950/80 p-8 sm:p-10">
                 <div className="flex flex-col gap-8 sm:flex-row sm:justify-between">

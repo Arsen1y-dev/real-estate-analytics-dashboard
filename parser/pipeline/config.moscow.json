@@ -1,0 +1,61 @@
+{
+  "preset": "default",
+  "base_url": "https://realty.yandex.ru/moskva/kupit/kvartira/",
+  "base_urls": [
+    "https://realty.yandex.ru/moskva/kupit/kvartira/",
+    "https://realty.yandex.ru/moskva/kupit/kvartira/studiya/",
+    "https://realty.yandex.ru/moskva/kupit/kvartira/odnokomnatnaya/",
+    "https://realty.yandex.ru/moskva/kupit/kvartira/dvuhkomnatnaya/",
+    "https://realty.yandex.ru/moskva/kupit/kvartira/tryohkomnatnaya/",
+    "https://realty.yandex.ru/moskva/kupit/kvartira/chetyrehkomnatnaya/",
+    "https://realty.yandex.ru/moskva_i_moskovskaya_oblast/kupit/kvartira/",
+    "https://realty.yandex.ru/moskva_i_moskovskaya_oblast/kupit/kvartira/studiya/",
+    "https://realty.yandex.ru/moskva_i_moskovskaya_oblast/kupit/kvartira/odnokomnatnaya/",
+    "https://realty.yandex.ru/moskva_i_moskovskaya_oblast/kupit/kvartira/dvuhkomnatnaya/",
+    "https://realty.yandex.ru/moskva_i_moskovskaya_oblast/kupit/kvartira/tryohkomnatnaya/",
+    "https://realty.yandex.ru/moskva_i_moskovskaya_oblast/kupit/kvartira/chetyrehkomnatnaya/"
+  ],
+  "search_segments_file": "moscow_search_segments.json",
+  "min_links_target": 10000,
+  "use_proxy": false,
+  "proxy_url": null,
+  "headless": true,
+  "max_pages": 150,
+  "max_links": null,
+  "max_links_per_session": null,
+  "delay_between_listings_min": 4,
+  "delay_between_listings_max": 8,
+  "delay_after_page_load_min": 3,
+  "delay_after_page_load_max": 6,
+  "request_delays_ms": {
+    "links": {
+      "scroll_min": 800,
+      "scroll_max": 1900,
+      "navigation_min": 2800,
+      "navigation_max": 5600,
+      "pagination_click_min": 1000,
+      "pagination_click_max": 2400,
+      "between_pages_min": 5000,
+      "between_pages_max": 9500
+    },
+    "details": {
+      "before_open_min": 700,
+      "before_open_max": 1600,
+      "after_open_min": 2800,
+      "after_open_max": 5600
+    }
+  },
+  "resume_after_captcha": true,
+  "links_file": "data/moscow/yandex_realty_links.txt",
+  "details_file": "data/moscow/yandex_realty_details.csv",
+  "processed_file": "data/moscow/processed_apartment_data.csv",
+  "details_stats_file": "data/moscow/details_parsing_stats.json",
+  "links_stats_file": "data/moscow/parsing_stats.json",
+  "schema_contract_file": "pipeline/schema_contract.json",
+  "qa_report_json": "pipeline/reports/moscow_data_quality_report.json",
+  "qa_report_md": "pipeline/reports/moscow_data_quality_report.md",
+  "dashboard_processed_target": "../real-estate-analytics-dashboard/processed_apartment_data.csv",
+  "resume_details": true,
+  "city_center_lat": 55.7558,
+  "city_center_lng": 37.6176
+}
