@@ -29,8 +29,8 @@ if ! command -v node >/dev/null 2>&1 || [[ "$(node -p "process.versions.node.spl
     apt-get install -y nodejs
 fi
 
-echo "[deploy] nginx..."
-apt-get install -y nginx
+echo "[deploy] nginx + build tools (better-sqlite3)..."
+apt-get install -y nginx build-essential python3
 
 echo "[deploy] npm install + build..."
 cd "$APP_DIR"
