@@ -1,0 +1,168 @@
+\documentclass[aspectratio=169,12pt]{beamer}
+
+\usetheme{default}
+\usecolortheme{default}
+\setbeamertemplate{navigation symbols}{}
+
+\setbeamercolor{background canvas}{bg=white}
+\setbeamercolor{normal text}{fg=black,bg=white}
+\setbeamercolor{frametitle}{fg=black,bg=white}
+\setbeamercolor{title}{fg=black}
+\setbeamercolor{subtitle}{fg=black}
+\setbeamercolor{author}{fg=black}
+\setbeamercolor{institute}{fg=black}
+\setbeamercolor{date}{fg=black}
+\setbeamercolor{item}{fg=black}
+\setbeamercolor{subitem}{fg=black}
+\setbeamercolor{enumerate item}{fg=black}
+\setbeamertemplate{blocks}[default]
+\setbeamercolor{block title}{fg=black,bg=white}
+\setbeamercolor{block body}{fg=black,bg=white}
+
+\setbeamertemplate{frametitle}{
+  \vspace{0.4em}
+  \insertframetitle\par
+  \vspace{0.15em}
+  {\color{black!55}\rule{\textwidth}{0.4pt}}
+  \vspace{0.2em}
+}
+
+\setbeamertemplate{footline}{
+  \hfill
+  {\color{black!55}\insertframenumber/\inserttotalframenumber}
+  \hspace{1.2em}
+  \vspace{0.6em}
+}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T2A]{fontenc}
+\usepackage[russian]{babel}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\hypersetup{colorlinks=false,pdfborder={0 0 0}}
+
+\graphicspath{{../../report/images/}{../images/}}
+
+\newcommand{\screenshotslide}[3]{%
+  \begin{frame}{#1}
+    \begin{center}
+      \includegraphics[width=0.90\linewidth,height=0.64\textheight,keepaspectratio]{#2}
+      \vspace{0.35em}
+      \parbox{0.94\linewidth}{\centering\small #3}
+    \end{center}
+  \end{frame}
+}
+
+\title{Разработка интерактивной аналитической панели\\для визуализации и анализа данных\\рынка недвижимости}
+\subtitle{на основе данных платформы Яндекс.Недвижимость}
+\author{Перфилов Арсений Сергеевич}
+\institute{341 группа}
+\date{2026}
+
+\begin{document}
+
+% ===== I. ВВЕДЕНИЕ =====
+
+\begin{frame}[plain]
+  \vfill
+  {\Large\bfseries\inserttitle\par}
+  \vspace{0.8em}
+  {\normalsize\insertsubtitle\par}
+  \vspace{2.2em}
+  {\insertauthor\par}
+  \vspace{0.4em}
+  {\small\insertinstitute\par}
+  \vspace{0.4em}
+  {\small\insertdate\par}
+  \vfill
+\end{frame}
+
+\begin{frame}{Актуальность}
+  \begin{itemize}
+    \item Тысячи объявлений на Яндекс.Недвижимость --- мало удобных инструментов для анализа.
+    \item Нельзя быстро сравнить сегменты рынка и посмотреть выборку на карте.
+    \item Нет публичного API; данные динамические, работает антибот-защита.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Цель и задачи}
+  \textbf{Цель} --- система полного цикла: сбор $\rightarrow$ хранение $\rightarrow$ интерактивный анализ.
+
+  \medskip
+  \textbf{Задачи:}
+  \begin{enumerate}
+    \item Парсер (Python, Selenium): ссылки $\rightarrow$ карточки $\rightarrow$ CSV.
+    \item Сервер (Express, SQLite): датасеты по городам, REST API.
+    \item Дашборд (React): фильтры, KPI, графики, карта, таблица.
+    \item Роли пользователей; проверка на Москве и Саратове.
+  \end{enumerate}
+\end{frame}
+
+\begin{frame}{Архитектура системы}
+  \begin{center}
+    \setlength{\tabcolsep}{8pt}
+    \begin{tabular}{c}
+      \textbf{1. Парсер} --- Python, Selenium, ETL \\[0.3em]
+      $\downarrow$ CSV \\[0.3em]
+      \textbf{2. Сервер} --- Express, SQLite, REST API \\[0.3em]
+      $\downarrow$ JSON \\[0.3em]
+      \textbf{3. Клиент} --- React, Recharts, Яндекс.Карты \\
+    \end{tabular}
+  \end{center}
+  \vfill
+  \small Общие типы и фильтры --- каталог \texttt{shared/}. Далее --- реализация по этим трём слоям.
+\end{frame}
+
+% ===== II. СБОР И ХРАНЕНИЕ ДАННЫХ =====
+
+\screenshotslide{Сбор данных: парсер}{admin-parser-running.png}{Этап «Сбор ссылок»: прогресс, возобновление после остановки, обработка капчи}
+
+\screenshotslide{Хранение данных: сервер}{admin-server.png}{Загрузка CSV, ingest в датасет города, история обновлений}
+
+% ===== III. АНАЛИЗ В ДАШБОРДЕ (один сценарий) =====
+
+\screenshotslide{Дашборд: исходная выборка}{dash-main-light-moscow.png}{Москва, 12\,549 объявлений --- фильтры, KPI и графики на полном массиве}
+
+\screenshotslide{Шаг 1 --- фильтрация}{filters-after-light.png}{Срез: 3 комнаты, 120--190~м$^2$, 30--45~млн~руб.\\Осталось 22 объекта из 12\,549}
+
+\screenshotslide{Шаг 2 --- KPI и сегменты}{charts-after-filter-22.png}{Пересчёт показателей; сравнение: 7 новостроек и 15 вторичных}
+
+\screenshotslide{Шаг 3 --- карта и таблица}{map-table-after-filter.png}{19 точек на карте, 22 строки в таблице; данные согласованы с API}
+
+% ===== IV. РОЛИ ПОЛЬЗОВАТЕЛЕЙ =====
+
+\begin{frame}{Роли пользователей}
+  \begin{itemize}
+    \item \textbf{observer} --- просмотр KPI, графиков и карты; упрощённый список.
+    \item \textbf{analyst} --- полный дашборд: фильтры, экспорт, конструктор графиков.
+    \item \textbf{admin} --- датасеты, ingest и запуск парсера (слайды 5--6).
+    \item \textbf{manager} --- обзор рынков по городам и управление пользователями.
+  \end{itemize}
+  \vfill
+  \small Ниже --- примеры интерфейсов для manager и observer.
+\end{frame}
+
+\screenshotslide{Роль manager}{manager-markets-dark.png}{Сводка по городам: число объявлений и медианная цена}
+
+\screenshotslide{Роль observer}{observer-saratov-light.png}{Саратов, 75 объявлений --- облегчённый интерфейс без полной таблицы}
+
+% ===== V. ИТОГИ =====
+
+\begin{frame}{Результаты проверки}
+  \begin{itemize}
+    \item Москва --- \textbf{12\,549} объявлений; Саратов --- \textbf{75}.
+    \item Пройден сценарий фильтрации (22 объекта) и все роли.
+    \item Развёртывание на VPS: nginx, systemd.
+    \item Дашборд: \texttt{http://62.217.176.204/}
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Итоги}
+  Разработан программный комплекс полного цикла для анализа рынка жилой недвижимости на данных Яндекс.Недвижимость: парсер, сервер, интерактивный дашборд с разграничением прав.
+
+  \vfill
+  \centering
+  \href{http://62.217.176.204/}{http://62.217.176.204/}
+\end{frame}
+
+\end{document}

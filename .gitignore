@@ -34,3 +34,27 @@ parser/data/**/*
 !parser/data/**/.gitkeep
 parser/pipeline/.tmp_*
 server/data/parser-jobs/*.log
+
+# Python
+__pycache__/
+*.py[cod]
+parser/pipeline/.runtime_*.json
+
+# LaTeX build
+report/*.aux
+report/*.bbl
+report/*.blg
+report/*.out
+report/*.toc
+report/*.fdb_latexmk
+report/*.fls
+report/*.synctex.gz
+report/_minted/
+report/.appendix-cache/
+
+# DB temps and backups
+server/data/*.db-shm*
+server/data/*.db-wal*
+server/data/*.bak
+server/data/*_recovered.db
+report/*.pdf
